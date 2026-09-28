@@ -118,6 +118,7 @@ async function loadMap(id, opts = {}) {
   fade.setFocus(null);
   fade.setTypes(map.types);
   if (!focusOpacityTouched) setFocusOpacity(map.settings.focus_opacity);
+  fade.setSmallPercent(map.settings.small_fade_percent);
   $('#focus-toggle').checked = false;
   collapsed.clear();
   T.walk(map.tree, (n) => { if (n.kind === 'group') collapsed.set(n.id, n.collapsed); });
@@ -264,6 +265,13 @@ fade.setZoomReveal(zoomToggle.checked);
 zoomToggle.addEventListener('change', (e) => {
   localStorage.setItem('zoomReveal', e.target.checked ? '1' : '0');
   fade.setZoomReveal(e.target.checked);
+});
+const smallToggle = $('#small-toggle');
+smallToggle.checked = localStorage.getItem('fadeSmall') === '1';
+fade.setFadeSmall(smallToggle.checked);
+smallToggle.addEventListener('change', (e) => {
+  localStorage.setItem('fadeSmall', e.target.checked ? '1' : '0');
+  fade.setFadeSmall(e.target.checked);
 });
 
 // ---------- notes & hitboxes ----------

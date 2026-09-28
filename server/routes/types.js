@@ -18,6 +18,7 @@ function typeFields(body, partial) {
   }
   if (body.fade_focus !== undefined) out.fade_focus = body.fade_focus ? 1 : 0;
   if (body.fade_zoom !== undefined) out.fade_zoom = body.fade_zoom ? 1 : 0;
+  if (body.fade_small !== undefined) out.fade_small = body.fade_small ? 1 : 0;
   return out;
 }
 
@@ -25,8 +26,8 @@ admin.post('/types', wrap((req, res) => {
   const f = typeFields(req.body, false);
   const id = newId();
   const pos = (db.prepare('SELECT MAX(pos) AS p FROM types').get().p ?? -1) + 1;
-  db.prepare('INSERT INTO types (id, name, fade_focus, fade_zoom, pos) VALUES (?, ?, ?, ?, ?)')
-    .run(id, f.name, f.fade_focus ?? 1, f.fade_zoom ?? 1, pos);
+  db.prepare('INSERT INTO types (id, name, fade_focus, fade_zoom, fade_small, pos) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, f.name, f.fade_focus ?? 1, f.fade_zoom ?? 1, f.fade_small ?? 1, pos);
   res.status(201).json({ id });
 }));
 
@@ -47,10 +48,14 @@ admin.delete('/types/:id', wrap((req, res) => {
 }));
 
 admin.patch('/settings', wrap((req, res) => {
-  const { focus_opacity } = req.body;
+  const { focus_opacity, small_fade_percent } = req.body;
   if (focus_opacity !== undefined) {
     if (!finite(focus_opacity) || focus_opacity < 0 || focus_opacity > 1) throw new HttpError(400, 'focus_opacity must be between 0 and 1');
     setSetting('focus_opacity', focus_opacity);
+  }
+  if (small_fade_percent !== undefined) {
+    if (!finite(small_fade_percent) || small_fade_percent < 0.05 || small_fade_percent > 25) throw new HttpError(400, 'small_fade_percent must be between 0.05 and 25');
+    setSetting('small_fade_percent', small_fade_percent);
   }
   res.json(appSettings());
 }));

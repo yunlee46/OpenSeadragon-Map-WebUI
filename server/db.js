@@ -150,6 +150,12 @@ const migrations = [
     // Publish every existing map so visitors keep seeing them (done after startup; see content.js).
     db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('publish_all_pending', '1')`).run();
   },
+  // 3: fade images that become small on screen when zoomed out
+  () => {
+    db.exec(`ALTER TABLE types ADD COLUMN fade_small INTEGER NOT NULL DEFAULT 1;`);
+    db.prepare(`UPDATE types SET fade_small = 0 WHERE name = 'background'`).run();
+    db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('small_fade_percent', '1')`).run();
+  },
 ];
 
 const version = db.pragma('user_version', { simple: true });

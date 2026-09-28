@@ -8,9 +8,10 @@ A self-hosted [OpenSeadragon](https://openseadragon.github.io/) deep-zoom viewer
 - **Notes (annotations).** Rectangles or polygons that show a title, a picture and formatted text (bold, italics, links, lists) when clicked.
 - **Shapes move with their image.** A hitbox or note can be attached to an image or group, so it moves, resizes, hides and fades along with it.
 - **Blender-style image list.** Nested groups you can collapse, drag and drop, and hide with an eye toggle. List order is stacking order, and a group can be moved on the canvas as one piece.
-- **Image types** (background, object, character, plus your own) decide which images fade in focus mode and zoom-reveal. Each image on a map can override its type or always/never fade.
+- **Image types** (background, object, character, plus your own) decide which images fade in focus mode, zoom-reveal and when small. Each image on a map can override its type or always/never fade.
 - **Focus mode.** Pick an image and the view flies to it while the other images fade. The fade amount is adjustable, with a default set in the admin.
 - **Zoom-reveal.** As you zoom into an image it turns transparent, revealing the one behind it, then the next one, layer by layer.
+- **Fade small images.** As you zoom out, images that cover only a little of the screen (default: under 1%) fade away, and come back as you zoom in.
 - **Drafts and publishing.** Editing saves a draft. Visitors only see changes after you **Publish**, and you can preview a draft or throw it away.
 - **Undo/redo** in the editor (Ctrl+Z / Ctrl+Y).
 - **Starting view per map**, used when the map opens and by the home button.
@@ -98,7 +99,7 @@ If you run the app without Docker, start it again by hand after a restore.
 
 1. **Images → upload.** Tiling runs in the background, one image at a time. Very large images can take a few minutes. Give each image a **type** from the dropdown on its card. Search and filter by name, type, status, or "not on any map".
 2. **Planner.** List the images you still need to make. Open an item to add notes, reference images, a planned map and group, and a type. **⤒ Add image** uploads the finished image straight into the library with the item's name and type, and marks the item done. **Link existing** uses an image that's already in the library.
-3. **Types & settings.** Create, rename and delete types, choose whether each type fades in focus mode and zoom-reveal, set the default fade amount, and back up or restore everything.
+3. **Types & settings.** Create, rename and delete types, choose whether each type fades in focus mode, in zoom-reveal and when small, set the default focus fade amount and the "small" threshold, and back up or restore everything.
 4. **Maps → Create map.** This opens the editor.
 5. In the editor's **Images on this map** section:
    - The three icon buttons are **add from library** (images planned for this map are listed first), **upload** (new files are uploaded, tiled and placed automatically) and **new group**.
@@ -113,7 +114,7 @@ If you run the app without Docker, start it again by hand after a restore.
 9. **Publish** makes the saved draft visible to visitors. **Preview** shows the draft exactly as visitors will see it. **Discard draft** goes back to the published version.
 10. Mark one map as the **default**. It's the one the viewer opens first.
 
-In the viewer, **☰ Images** opens a panel listing the map's images with thumbnails. Click an image to fly to it, and turn on focus mode or zoom-reveal from the panel. **⌕** searches every published map, and **🔗** copies a link to the current view.
+In the viewer, **☰ Images** opens a panel listing the map's images with thumbnails. Click an image to fly to it, and turn on focus mode, zoom-reveal or fade small images from the panel. **⌕** searches every published map, and **🔗** copies a link to the current view.
 
 Deleting an image removes it from every map that uses it, deletes its tiles, and puts its planner item back to "in progress". Deleting a map leaves hitboxes that pointed to it unlinked. Deleting a type leaves its images with no type.
 

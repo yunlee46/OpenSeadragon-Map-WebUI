@@ -120,8 +120,11 @@ export async function openEditor(id) {
   fade.focusOpacity = map.settings.focus_opacity;
   fade.setFocus(null);
   fade.setZoomReveal(false);
+  fade.setFadeSmall(false);
+  fade.setSmallPercent(map.settings.small_fade_percent);
   $('#focus-toggle').checked = false;
   $('#zoom-toggle').checked = false;
+  $('#small-toggle').checked = false;
   setFocusOpacityUi(map.settings.focus_opacity);
 
   editor.viewer.world.removeAll();
@@ -444,7 +447,7 @@ function layerProps(layer) {
       onchange: (e) => { layer.fade_mode = e.target.value; setDirty(); editor.fade.refresh(); renderProps(); },
     },
     h('option', { value: 'inherit', selected: layer.fade_mode === 'inherit' },
-      `Follow type (focus: ${inheritFades('focus') ? 'yes' : 'no'}, zoom: ${inheritFades('zoom') ? 'yes' : 'no'})`),
+      `Follow type (focus: ${inheritFades('focus') ? 'yes' : 'no'}, zoom: ${inheritFades('zoom') ? 'yes' : 'no'}, small: ${inheritFades('small') ? 'yes' : 'no'})`),
     h('option', { value: 'always', selected: layer.fade_mode === 'always' }, 'Always fade'),
     h('option', { value: 'never', selected: layer.fade_mode === 'never' }, 'Never fade'))),
     h('div', { class: 'subsection' },
@@ -1239,6 +1242,7 @@ $('#focus-default-btn').addEventListener('click', async () => {
   setTimeout(() => { $('#focus-default-btn').textContent = 'Make this the default'; }, 1800);
 });
 $('#zoom-toggle').addEventListener('change', (e) => editor.fade.setZoomReveal(e.target.checked));
+$('#small-toggle').addEventListener('change', (e) => editor.fade.setFadeSmall(e.target.checked));
 
 function serializeTree(list) {
   return list.map((n) => (n.kind === 'group'

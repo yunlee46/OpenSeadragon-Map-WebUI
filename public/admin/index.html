@@ -78,9 +78,9 @@
     <!-- Types & settings -->
     <section id="settings-view" class="page" hidden>
       <div class="page-head"><h2>Image types</h2></div>
-      <p class="hint">Types decide which images fade. <b>Focus</b>: fades while another image is focused. <b>Zoom-reveal</b>: fades as you zoom into it, revealing what's behind. Each image on a map can also be set to always or never fade.</p>
+      <p class="hint">Types decide which images fade. <b>Focus</b>: fades while another image is focused. <b>Zoom-reveal</b>: fades as you zoom into it, revealing what's behind. <b>When small</b>: fades away once it takes up only a little of the screen as you zoom out. Each image on a map can also be set to always or never fade.</p>
       <table class="list">
-        <thead><tr><th>Name</th><th>Fades in focus</th><th>Fades in zoom-reveal</th><th>Images</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Fades in focus</th><th>Fades in zoom-reveal</th><th>Fades when small</th><th>Images</th><th></th></tr></thead>
         <tbody id="types-list"></tbody>
       </table>
       <form id="new-type-form" class="inline-form add-type">
@@ -97,6 +97,15 @@
         </span>
       </label>
       <p class="hint">Viewers and the editor can adjust this with a slider. This is where it starts.</p>
+
+      <div class="page-head spaced"><h2>Fade small images</h2></div>
+      <label class="setting-row">
+        <span>Images start fading when they cover less than this much of the screen (fully gone at a quarter of it)</span>
+        <span class="slider-group">
+          <input type="range" id="small-default" min="0" max="1" step="0.01">
+          <output id="small-default-out"></output>
+        </span>
+      </label>
 
       <div class="page-head spaced"><h2>Backup &amp; restore</h2></div>
       <p class="hint">A backup is one zip with everything: maps, drafts, images and their tiles, the planner and its reference images. It can be large.</p>
@@ -224,6 +233,7 @@
           </label>
           <button id="focus-default-btn" class="btn small ghost" title="Save this visibility as the default for everyone">Make this the default</button>
           <label class="switch"><input type="checkbox" id="zoom-toggle"> <span>Zoom-reveal</span></label>
+          <label class="switch" title="Small images fade away when zoomed out"><input type="checkbox" id="small-toggle"> <span>Fade small images</span></label>
           <p class="hint small">Double-click an image (or press F) to focus it. These switches only preview; visitors turn them on in the viewer.</p>
         </details>
 

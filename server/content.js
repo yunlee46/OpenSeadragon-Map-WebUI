@@ -73,10 +73,13 @@ function listTypes() {
   return db.prepare(`
     SELECT t.*, (SELECT COUNT(*) FROM images i WHERE i.type_id = t.id) AS image_count
     FROM types t ORDER BY t.pos, t.rowid`).all()
-    .map((t) => ({ ...t, fade_focus: !!t.fade_focus, fade_zoom: !!t.fade_zoom }));
+    .map((t) => ({ ...t, fade_focus: !!t.fade_focus, fade_zoom: !!t.fade_zoom, fade_small: !!t.fade_small }));
 }
 
-const appSettings = () => ({ focus_opacity: parseFloat(getSetting('focus_opacity', '0.3')) });
+const appSettings = () => ({
+  focus_opacity: parseFloat(getSetting('focus_opacity', '0.3')),
+  small_fade_percent: parseFloat(getSetting('small_fade_percent', '1')), // images below this share of the screen fade out
+});
 
 // Everything the viewer or editor needs to show a map.
 // forVisitors: hide hidden images/groups and their attached shapes, and only link to published maps.

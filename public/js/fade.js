@@ -5,6 +5,8 @@
 // zoom doubling later, uncovering what's underneath. Overlapping eligible images peel away in stacking
 // order: an image only starts fading after the eligible images stacked above it have faded out.
 // A layer's manual `zoom_fade` sets its own start zoom instead.
+// Fade small: when zoomed out, an eligible image whose on-screen area drops below `smallPercent` of the
+// screen starts fading, and is gone at a quarter of that.
 
 import { canFade, layerHeight, find, descendantLayers } from './tree.js';
 
@@ -20,6 +22,8 @@ export class FadeController {
     this.focusIds = null;        // Set of focused layer ids, or null
     this.focusOpacity = 0.3;
     this.zoomReveal = false;
+    this.fadeSmall = false;
+    this.smallPercent = 1;       // % of the screen area
     this.focusFactor = new Map(); // layer id -> current eased focus factor
     this.schedule = new Map();    // layer id -> { start, end } zoom-reveal window
     this.raf = null;
@@ -33,6 +37,8 @@ export class FadeController {
   setFocus(ids) { this.focusIds = ids && ids.size ? ids : null; this.animate(); }
   setFocusOpacity(v) { this.focusOpacity = v; this.animate(); }
   setZoomReveal(on) { this.zoomReveal = on; this.refresh(); }
+  setFadeSmall(on) { this.fadeSmall = on; this.apply(); }
+  setSmallPercent(p) { this.smallPercent = p; this.apply(); }
 
   // Recompute zoom-reveal windows (after layers move, change or the viewer resizes).
   refresh() {
@@ -68,6 +74,18 @@ export class FadeController {
     return 1 - smooth(t);
   }
 
+  // 1 while the image covers enough of the screen, easing to 0 as it shrinks to a quarter of the threshold.
+  smallFactor(layer, zoom, aspect) {
+    if (!this.fadeSmall || !canFade(layer, 'small', this.types)) return 1;
+    // At zoom z the screen is 1/z units wide and aspect/z tall.
+    const frac = (layer.width * zoom) * (layerHeight(layer) * zoom / aspect);
+    const full = this.smallPercent / 100;
+    const gone = full / 4;
+    if (frac >= full) return 1;
+    if (frac <= gone) return 0;
+    return smooth(Math.log(frac / gone) / Math.log(full / gone));
+  }
+
   focusTarget(layer) {
     if (!this.focusIds || this.focusIds.has(layer.id) || !canFade(layer, 'focus', this.types)) return 1;
     return this.focusOpacity;
@@ -95,11 +113,14 @@ export class FadeController {
     const vp = this.viewer.viewport;
     if (!vp) return;
     const zoom = vp.getZoom(true);
+    const size = vp.getContainerSize();
+    const aspect = size.y / Math.max(1, size.x);
     for (const { layer, hidden, item } of this.getLayers()) {
       let o = 0;
       if (!hidden) {
         const focused = this.focusIds?.has(layer.id);
-        o = layer.opacity * (this.focusFactor.get(layer.id) ?? 1) * (focused ? 1 : this.zoomFactor(layer.id, zoom));
+        const zoomed = focused ? 1 : this.zoomFactor(layer.id, zoom) * this.smallFactor(layer, zoom, aspect);
+        o = layer.opacity * (this.focusFactor.get(layer.id) ?? 1) * zoomed;
       }
       this.current.set(layer.id, o);
       if (item && Math.abs(item.getOpacity() - o) > 0.001) item.setOpacity(o);

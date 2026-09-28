@@ -283,7 +283,7 @@ async function showSettings() {
   const [types, settings] = await Promise.all([adminApi('/api/types'), adminApi('/api/settings')]);
   const tbody = $('#types-list');
   tbody.replaceChildren();
-  if (!types.length) tbody.append(h('tr', {}, h('td', { colSpan: 5, class: 'muted' }, 'No types. Add one below.')));
+  if (!types.length) tbody.append(h('tr', {}, h('td', { colSpan: 6, class: 'muted' }, 'No types. Add one below.')));
   for (const t of types) {
     const patch = (body) => adminApi(`/api/admin/types/${t.id}`, { method: 'PATCH', body });
     tbody.append(h('tr', {},
@@ -293,6 +293,7 @@ async function showSettings() {
       })),
       h('td', {}, h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: t.fade_focus, onchange: (e) => patch({ fade_focus: e.target.checked }) }))),
       h('td', {}, h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: t.fade_zoom, onchange: (e) => patch({ fade_zoom: e.target.checked }) }))),
+      h('td', {}, h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: t.fade_small, onchange: (e) => patch({ fade_small: e.target.checked }) }))),
       h('td', { class: 'muted' }, String(t.image_count)),
       h('td', { class: 'actions' }, h('button', {
         class: 'btn small danger',
@@ -311,13 +312,23 @@ async function showSettings() {
   const slider = $('#focus-default');
   slider.value = settings.focus_opacity;
   $('#focus-default-out').textContent = `${Math.round(settings.focus_opacity * 100)}%`;
+  $('#small-default').value = Math.log(settings.small_fade_percent / 0.1) / Math.log(100);
+  $('#small-default-out').textContent = pctLabel(settings.small_fade_percent);
 }
+
+// The small-image slider is logarithmic: 0.1% to 10% of the screen.
+const sliderToPct = (v) => +(0.1 * 100 ** v).toPrecision(2);
+const pctLabel = (p) => `${p < 1 ? p.toFixed(2).replace(/0$/, '') : +p.toFixed(1)}%`;
+$('#small-default').addEventListener('input', (e) => { $('#small-default-out').textContent = pctLabel(sliderToPct(+e.target.value)); });
+$('#small-default').addEventListener('change', (e) => {
+  adminApi('/api/admin/settings', { method: 'PATCH', body: { small_fade_percent: sliderToPct(+e.target.value) } });
+});
 
 $('#new-type-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = e.target.name.value.trim();
   if (!name) return;
-  await adminApi('/api/admin/types', { method: 'POST', body: { name, fade_focus: true, fade_zoom: true } });
+  await adminApi('/api/admin/types', { method: 'POST', body: { name, fade_focus: true, fade_zoom: true, fade_small: true } });
   e.target.reset();
   showSettings();
 });
