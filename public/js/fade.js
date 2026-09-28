@@ -6,7 +6,7 @@
 // order: an image only starts fading after the eligible images stacked above it have faded out.
 // A layer's manual `zoom_fade` sets its own start zoom instead.
 
-import { canFade, layerHeight } from './tree.js';
+import { canFade, layerHeight, find, descendantLayers } from './tree.js';
 
 const smooth = (t) => t * t * (3 - 2 * t);
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -104,7 +104,22 @@ export class FadeController {
       this.current.set(layer.id, o);
       if (item && Math.abs(item.getOpacity() - o) > 0.001) item.setOpacity(o);
     }
+    this.onApply?.();
   }
 
   opacityOf(id) { return this.current.get(id) ?? 1; }
+
+  // Opacity for shapes attached to an image (or group: its most visible image).
+  shapeOpacities(shapes, tree, floor = 0) {
+    const out = new Map();
+    for (const s of shapes) {
+      if (!s.attach_id) continue;
+      const node = find(tree, s.attach_id)?.node;
+      if (!node) continue;
+      const layers = descendantLayers(node);
+      const o = layers.length ? Math.max(...layers.map((l) => this.opacityOf(l.id))) : 1;
+      out.set(s.id, Math.max(floor, o));
+    }
+    return out;
+  }
 }

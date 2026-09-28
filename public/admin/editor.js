@@ -1,8 +1,11 @@
-import { ShapeOverlay, eventPixel, rectFromPoints, translateShape, moveVertex } from '/js/overlay.js';
+import {
+  ShapeOverlay, eventPixel, rectFromPoints, translateShape, moveVertex, scaleShape, shapeBounds,
+} from '/js/overlay.js';
 import * as T from '/js/tree.js';
 import { FadeController } from '/js/fade.js';
 import { renderOutliner, ICONS } from '/js/outliner.js';
 import { showMenu } from '/js/contextmenu.js';
+import { renderMarkdown } from '/js/markdown.js';
 import { $, h, newId, adminApi, uploadFiles, typeLabel } from './common.js';
 
 const Pt = (x, y) => new OpenSeadragon.Point(x, y);
@@ -27,6 +30,15 @@ export const editor = {
   draft: null,
   cursor: null,
   dirty: false,
+  homeView: null,    // {x, y, w, h}: where the viewer starts
+  unpublished: false,
+  targetTrees: new Map(), // map id -> image tree (for "focus image on arrival")
+  // Undo/redo: snapshots of the editable state, captured shortly after each change.
+  history: [],
+  historyIndex: -1,
+  captureTimer: null,
+  restoring: false,
+  saved: null,       // snapshot at the last save, to know whether undo got back to it
 };
 
 // ======================================================================
@@ -50,6 +62,8 @@ function initViewer() {
   editor.viewer = viewer;
   editor.overlay = new ShapeOverlay(viewer);
   editor.fade = new FadeController(viewer, drawOrder);
+  // Shapes attached to images fade and hide with them (kept slightly visible so they can still be edited).
+  editor.fade.onApply = () => editor.overlay.setOpacities(editor.fade.shapeOpacities(editor.shapes, editor.tree, 0.25));
 
   viewer.addHandler('canvas-press', onPress);
   viewer.addHandler('canvas-drag', onDrag);
@@ -72,7 +86,7 @@ export async function openEditor(id) {
   let map, maps, images;
   try {
     [map, maps, images] = await Promise.all([
-      adminApi(`/api/admin/maps/${id}`), adminApi('/api/maps'), adminApi('/api/admin/images'),
+      adminApi(`/api/admin/maps/${id}`), adminApi('/api/admin/maps'), adminApi('/api/admin/images'),
     ]);
   } catch (err) {
     alert(err.status === 404 ? 'That map does not exist.' : err.message);
@@ -86,9 +100,12 @@ export async function openEditor(id) {
     images: images.filter((i) => i.status === 'ready'),
     types: map.types,
     tree: map.tree,
-    shapes: map.shapes.map(({ target_name, ...s }) => s),
+    shapes: map.shapes.map(({ target_name, image_thumb, image_name, ...s }) => s),
     pending: [],
     selected: null, drag: null, draft: null, focusIds: null,
+    homeView: map.home_view,
+    unpublished: map.unpublished,
+    targetTrees: new Map(),
   });
   T.walk(editor.tree, (n) => { if (n.kind === 'layer') n.item = null; });
 
@@ -113,7 +130,10 @@ export async function openEditor(id) {
   syncWorld();
   editor.viewer.viewport.goHome(true);
   setTool('pan');
+  resetHistory();
   setDirty(false);
+  renderPublishState();
+  renderHomeView();
   renderAll();
 }
 
@@ -144,6 +164,133 @@ function syncWorld() {
 export function setDirty(v = true) {
   editor.dirty = v;
   $('#dirty').hidden = !v;
+  if (v && !editor.restoring) scheduleCapture();
+}
+
+// ======================================================================
+// Undo / redo
+// ======================================================================
+
+function snapshot() {
+  return JSON.stringify({
+    tree: editor.tree,
+    shapes: editor.shapes,
+    name: $('#map-name-input').value,
+    background: $('#map-bg-input').value,
+    isDefault: $('#map-default-input').checked,
+    homeView: editor.homeView,
+  }, (k, v) => (k === 'item' ? undefined : v));
+}
+
+function resetHistory() {
+  clearTimeout(editor.captureTimer);
+  editor.captureTimer = null;
+  editor.saved = snapshot();
+  editor.history = [editor.saved];
+  editor.historyIndex = 0;
+  renderUndoButtons();
+}
+
+function captureNow() {
+  clearTimeout(editor.captureTimer);
+  editor.captureTimer = null;
+  const s = snapshot();
+  if (s === editor.history[editor.historyIndex]) return;
+  editor.history = editor.history.slice(0, editor.historyIndex + 1);
+  editor.history.push(s);
+  if (editor.history.length > 200) editor.history.shift();
+  editor.historyIndex = editor.history.length - 1;
+  renderUndoButtons();
+}
+
+// Many quick changes (typing, dragging a slider) become one undo step.
+function scheduleCapture() {
+  clearTimeout(editor.captureTimer);
+  editor.captureTimer = setTimeout(captureNow, 400);
+  renderUndoButtons();
+}
+
+function undo() {
+  if (editor.captureTimer) captureNow();
+  if (editor.historyIndex <= 0) return;
+  editor.historyIndex--;
+  restore(editor.history[editor.historyIndex]);
+}
+
+function redo() {
+  if (editor.captureTimer) captureNow();
+  if (editor.historyIndex >= editor.history.length - 1) return;
+  editor.historyIndex++;
+  restore(editor.history[editor.historyIndex]);
+}
+
+function restore(s) {
+  editor.restoring = true;
+  const data = JSON.parse(s);
+  const oldItems = new Map(T.layersTopFirst(editor.tree).map(({ layer }) => [layer.id, layer.item]));
+  const keep = new Set();
+  for (const { layer } of T.layersTopFirst(data.tree)) {
+    const item = oldItems.get(layer.id);
+    if (item) {
+      layer.item = item;
+      keep.add(layer.id);
+      item.setPosition(Pt(layer.x, layer.y), true);
+      item.setWidth(layer.width, true);
+    } else {
+      layer.item = null;
+      addLayerItem(layer).then(syncWorld);
+    }
+  }
+  for (const [id, item] of oldItems) if (item && !keep.has(id)) editor.viewer.world.removeItem(item);
+
+  editor.tree = data.tree;
+  editor.shapes = data.shapes;
+  editor.homeView = data.homeView;
+  $('#map-name-input').value = data.name;
+  $('#map-bg-input').value = data.background;
+  $('#map-default-input').checked = data.isDefault;
+  editor.viewer.container.style.background = data.background;
+  if (editor.selected && editor.selected.type !== 'shape' && !findNode(editor.selected.id)) editor.selected = null;
+  if (editor.selected?.type === 'shape' && !editor.shapes.some((x) => x.id === editor.selected.id)) editor.selected = null;
+  if (editor.focusIds && ![...editor.focusIds].some((id) => findNode(id))) clearFocus();
+
+  syncWorld();
+  setDirty(s !== editor.saved);
+  editor.restoring = false;
+  renderHomeView();
+  renderUndoButtons();
+  renderAll();
+}
+
+function renderUndoButtons() {
+  $('#undo-btn').disabled = editor.historyIndex <= 0 && !editor.captureTimer;
+  $('#redo-btn').disabled = editor.historyIndex >= editor.history.length - 1;
+}
+
+// ======================================================================
+// Publishing & starting view
+// ======================================================================
+
+function renderPublishState() {
+  const el = $('#publish-state');
+  if (!editor.map.published_at) {
+    el.textContent = 'Not published yet: visitors can\'t see this map';
+    el.className = 'publish-state warn';
+  } else if (editor.unpublished) {
+    el.textContent = 'Draft has changes visitors don\'t see yet';
+    el.className = 'publish-state warn';
+  } else {
+    el.textContent = 'Published: visitors see this version';
+    el.className = 'publish-state ok';
+  }
+  $('#discard-btn').hidden = !editor.map.published_at || !editor.unpublished;
+}
+
+function renderHomeView() {
+  const v = editor.homeView;
+  $('#home-view-state').textContent = v ? 'Saved view' : 'Fit everything (default)';
+  $('#home-view-go').hidden = !v;
+  $('#home-view-clear').hidden = !v;
 }
 
 // ======================================================================
@@ -247,9 +394,10 @@ function renderShapesList() {
   if (!editor.shapes.length) list.append(h('li', { class: 'muted' }, 'Use Rect or Polygon to draw one.'));
   editor.shapes.forEach((s) => {
     const target = editor.maps.find((m) => m.id === s.target_map_id);
-    const label = s.kind === 'hitbox'
-      ? `${s.title || 'Hitbox'} → ${target ? target.name : '(no target)'}`
-      : `📝 ${s.title || 'Untitled note'}`;
+    let host = null;
+    try { host = s.url ? new URL(s.url).hostname : null; } catch { /* not a valid URL yet */ }
+    const dest = s.action === 'url' ? (host ? `${host} ↗` : '(no link)') : target ? target.name : '(no target)';
+    const label = s.kind === 'hitbox' ? `${s.title || 'Hitbox'} → ${dest}` : `📝 ${s.title || 'Untitled note'}`;
     list.append(h('li', {
       class: sel?.type === 'shape' && sel.id === s.id ? 'active' : '',
       onclick: () => { select('shape', s.id); panToShape(s); },
@@ -340,23 +488,83 @@ function groupProps(g) {
   ];
 }
 
+// Options for "moves with": every image and group on the map, indented by depth.
+function attachOptions(selectedId) {
+  const opts = [h('option', { value: '', selected: !selectedId }, 'Nothing (stays put)')];
+  T.walk(editor.tree, (n, parent, depth) => {
+    const label = `${'  '.repeat(depth)}${n.kind === 'group' ? '📁 ' : ''}${n.kind === 'group' ? n.name : T.displayName(n)}`;
+    opts.push(h('option', { value: n.id, selected: n.id === selectedId }, label));
+  });
+  return opts;
+}
+
+// The image list of another map, for "focus this image when arriving".
+function targetImageSelect(shape) {
+  const select = h('select', { onchange: (e) => updateShape(shape, { target_layer_id: e.target.value || null }) },
+    h('option', { value: '' }, '— just open the map —'));
+  const fill = (tree) => {
+    T.walk(tree, (n, parent, depth) => {
+      if (n.kind !== 'layer' && n.kind !== 'group') return;
+      select.append(h('option', { value: n.id, selected: n.id === shape.target_layer_id },
+        `${'  '.repeat(depth)}${n.kind === 'group' ? `📁 ${n.name}` : T.displayName(n)}`));
+    });
+  };
+  const cached = editor.targetTrees.get(shape.target_map_id);
+  if (cached) fill(cached);
+  else {
+    adminApi(`/api/admin/maps/${shape.target_map_id}`).then((m) => {
+      editor.targetTrees.set(shape.target_map_id, m.tree);
+      fill(m.tree);
+    }).catch(() => {});
+  }
+  return select;
+}
+
 function shapeProps(shape) {
   const isHit = shape.kind === 'hitbox';
+  const action = shape.action || 'map';
+  const preview = h('div', { class: 'md-preview', html: renderMarkdown(shape.body) });
+  const noteImage = editor.images.find((i) => i.id === shape.image_id);
   return [
     h('h3', {}, isHit ? 'Hitbox' : 'Note'),
     h('label', { class: 'row' }, 'Type', h('select', {
       onchange: (e) => { updateShape(shape, { kind: e.target.value }); renderProps(); },
-    }, h('option', { value: 'hitbox', selected: isHit }, 'Hitbox (link to map)'), h('option', { value: 'annotation', selected: !isHit }, 'Note (annotation)'))),
-    isHit ? h('label', {}, 'Goes to map', h('select', {
-      onchange: (e) => updateShape(shape, { target_map_id: e.target.value || null }),
+    }, h('option', { value: 'hitbox', selected: isHit }, 'Hitbox (link)'), h('option', { value: 'annotation', selected: !isHit }, 'Note (text popup)'))),
+
+    isHit ? h('label', { class: 'row' }, 'When clicked', h('select', {
+      onchange: (e) => { updateShape(shape, { action: e.target.value }); renderProps(); },
+    },
+    h('option', { value: 'map', selected: action === 'map' }, 'Open another map'),
+    h('option', { value: 'url', selected: action === 'url' }, 'Open a web page'))) : null,
+
+    isHit && action === 'map' ? h('label', {}, 'Goes to map', h('select', {
+      onchange: (e) => { updateShape(shape, { target_map_id: e.target.value || null, target_layer_id: null }); renderProps(); },
     }, h('option', { value: '' }, '— choose a map —'),
     ...editor.maps.filter((m) => m.id !== editor.map.id).map((m) => h('option', { value: m.id, selected: m.id === shape.target_map_id }, m.name)))) : null,
+    isHit && action === 'map' && shape.target_map_id ? h('label', {}, 'On arrival, focus', targetImageSelect(shape)) : null,
+    isHit && action === 'url' ? h('label', {}, 'Web address', h('input', {
+      type: 'url', value: shape.url || '', placeholder: 'https://…', maxLength: 2000,
+      oninput: (e) => updateShape(shape, { url: e.target.value.trim() || null }),
+    })) : null,
+
     h('label', {}, isHit ? 'Label (shown on hover, optional)' : 'Title', h('input', {
       value: shape.title, maxLength: 300, oninput: (e) => updateShape(shape, { title: e.target.value }),
     })),
     isHit ? null : h('label', {}, 'Text', h('textarea', {
-      rows: 6, value: shape.body, maxLength: 20000, oninput: (e) => updateShape(shape, { body: e.target.value }),
+      rows: 6, value: shape.body, maxLength: 20000,
+      oninput: (e) => { updateShape(shape, { body: e.target.value }); preview.innerHTML = renderMarkdown(e.target.value); },
     })),
+    isHit ? null : h('p', { class: 'hint small' }, '**bold**, *italic*, [link](https://…), [other map](?map=<id>), "- " for lists.'),
+    isHit ? null : preview,
+    isHit ? null : h('label', { class: 'row' }, 'Picture', h('select', {
+      onchange: (e) => { updateShape(shape, { image_id: e.target.value || null }); renderProps(); },
+    }, h('option', { value: '' }, 'None'),
+    ...editor.images.map((i) => h('option', { value: i.id, selected: i.id === shape.image_id }, i.name)))),
+    noteImage ? h('img', { class: 'note-thumb', src: noteImage.thumb_url, alt: '' }) : null,
+
+    h('label', {}, 'Moves & hides with', h('select', {
+      onchange: (e) => updateShape(shape, { attach_id: e.target.value || null }),
+    }, ...attachOptions(shape.attach_id))),
     h('label', { class: 'row' }, 'Colour', h('input', {
       type: 'color', value: shape.color, oninput: (e) => updateShape(shape, { color: e.target.value }),
     })),
@@ -439,6 +647,7 @@ function removeNode(n) {
   if (n.kind === 'group' && layers.length &&
       !confirm(`Delete the group "${n.name}" and remove its ${layers.length} image(s) from this map? (They stay in the image library.)`)) return;
   for (const l of layers) if (l.item) editor.viewer.world.removeItem(l.item);
+  detachShapes(idsIn(n));
   T.remove(editor.tree, n.id);
   if (editor.focusIds?.has(n.id)) clearFocus();
   editor.selected = null;
@@ -451,6 +660,7 @@ function ungroup(g) {
   const r = T.find(editor.tree, g.id);
   if (!r) return;
   r.list.splice(r.index, 1, ...g.children);
+  detachShapes(new Set([g.id]));
   editor.selected = null;
   setDirty();
   syncWorld();
@@ -501,7 +711,7 @@ function setZoomFade(layer, zoom) {
 
 // ---------- adding images ----------
 
-function addImages(imgs) {
+function addImages(imgs, { groupId } = {}) {
   if (!imgs.length) return;
   const vp = editor.viewer.viewport;
   const center = vp.getCenter();
@@ -509,7 +719,9 @@ function addImages(imgs) {
   const existing = T.layersTopFirst(editor.tree).map((e) => e.layer);
   // Keep the pixel density of the first image on the map, so sizes stay comparable.
   const ref = existing[0];
-  const { targetId, where } = insertionPoint();
+  const { targetId, where } = groupId && findNode(groupId)?.kind === 'group'
+    ? { targetId: groupId, where: 'inside' }
+    : insertionPoint();
   let last = null;
   imgs.forEach((img, i) => {
     let width = ref ? img.width * (ref.width / ref.px_width) : 1;
@@ -544,21 +756,38 @@ async function openLibrary() {
   const grid = $('#library-grid');
   grid.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
   dialog.showModal();
-  const images = (await adminApi('/api/admin/images')).filter((i) => i.status === 'ready');
+  const [all, plan] = await Promise.all([adminApi('/api/admin/images'), adminApi('/api/admin/planner').catch(() => [])]);
+  const images = all.filter((i) => i.status === 'ready');
   editor.images = images;
-  const draw = () => {
-    const q = $('#library-search').value.trim().toLowerCase();
-    const shown = images.filter((i) => !q || i.name.toLowerCase().includes(q));
-    grid.replaceChildren(...(shown.length ? shown.map((img) => h('button', {
-      class: 'card image-card pick',
-      title: `Add "${img.name}" to this map`,
-      onclick: () => { dialog.close(); addImages([img]); },
-    },
+  const byId = new Map(images.map((i) => [i.id, i]));
+  const onMap = new Set(T.layersTopFirst(editor.tree).map((e) => e.layer.image_id));
+  const planned = plan.filter((p) => p.map_id === editor.map.id && p.image && byId.has(p.image.id));
+
+  const card = (img, onclick, extra) => h('button', { class: 'card image-card pick', title: `Add "${img.name}" to this map`, onclick },
     h('div', { class: 'thumb' }, h('img', { src: img.thumb_url, alt: '', loading: 'lazy' })),
     h('div', { class: 'name' }, img.name),
     h('div', { class: 'muted small' }, `${img.width.toLocaleString()} × ${img.height.toLocaleString()} px`,
       typeLabel(editor.types, img.type_id) ? h('span', { class: 'badge' }, typeLabel(editor.types, img.type_id)) : null),
-    )) : [h('p', { class: 'muted' }, images.length ? 'No matches.' : 'The library is empty. Use the upload button to add images.')]));
+    extra);
+
+  const draw = () => {
+    const q = $('#library-search').value.trim().toLowerCase();
+    const match = (name) => !q || name.toLowerCase().includes(q);
+    const shownPlanned = planned.filter((p) => match(p.title) || match(p.image.name));
+    const shown = images.filter((i) => match(i.name));
+    const out = [];
+    if (shownPlanned.length) {
+      out.push(h('h4', { class: 'picker-section' }, 'Planned for this map'));
+      out.push(...shownPlanned.map((p) => card(byId.get(p.image.id), () => {
+        dialog.close();
+        addImages([byId.get(p.image.id)], { groupId: p.group_id });
+      }, h('div', { class: 'small planned-note' },
+        onMap.has(p.image.id) ? '✓ already on this map' : p.group_name ? `Goes into “${p.group_name}”` : 'From the planner'))));
+      out.push(h('h4', { class: 'picker-section' }, 'Whole library'));
+    }
+    out.push(...(shown.length ? shown.map((img) => card(img, () => { dialog.close(); addImages([img]); }))
+      : [h('p', { class: 'muted' }, images.length ? 'No matches.' : 'The library is empty. Use the upload button to add images.')]));
+    grid.replaceChildren(...out);
   };
   $('#library-search').value = '';
   $('#library-search').oninput = draw;
@@ -609,7 +838,16 @@ async function uploadToMap(files) {
 // ---------- layer & shape edits ----------
 
 function updateLayer(layer, changes, rerenderProps = false) {
+  // Attached shapes follow moves and scale with the image (around its top-left corner).
+  const ox = layer.x, oy = layer.y, ow = layer.width;
   Object.assign(layer, changes);
+  const k = layer.width / ow;
+  for (const s of shapesAttachedTo(new Set([layer.id]))) {
+    let g = s.geometry;
+    if (k !== 1) g = scaleShape(g, ox, oy, k);
+    if (layer.x !== ox || layer.y !== oy) g = translateShape(g, layer.x - ox, layer.y - oy);
+    s.geometry = g;
+  }
   const item = layer.item;
   if (item) {
     if ('x' in changes || 'y' in changes) item.setPosition(Pt(layer.x, layer.y), true);
@@ -621,10 +859,27 @@ function updateLayer(layer, changes, rerenderProps = false) {
   if (rerenderProps) renderProps(); else syncLayerInputs(layer);
 }
 
+// A node's id plus the ids of everything inside it.
+function idsIn(node) {
+  const ids = new Set([node.id]);
+  if (node.children) T.walk(node.children, (n) => ids.add(n.id));
+  return ids;
+}
+
+const shapesAttachedTo = (ids) => editor.shapes.filter((s) => s.attach_id && ids.has(s.attach_id));
+
+function detachShapes(ids) {
+  for (const s of shapesAttachedTo(ids)) s.attach_id = null;
+}
+
 function addShape(geometry) {
   const kind = editor.drawKind;
+  // New shapes move with the image under their centre.
+  const b = shapeBounds(geometry);
+  const under = layerAt(Pt(b.x + b.w / 2, b.y + b.h / 2));
   const shape = {
-    id: newId(), kind, geometry, target_map_id: null, title: '', body: '',
+    id: newId(), kind, geometry, target_map_id: null, target_layer_id: null, action: 'map', url: null,
+    title: '', body: '', image_id: null, attach_id: under ? under.id : null,
     color: kind === 'hitbox' ? '#4da3ff' : '#ffb020',
   };
   editor.shapes.push(shape);
@@ -763,8 +1018,14 @@ function onPress(e) {
       const layer = layerAt(pt);
       if (!layer) break;
       const sel = selectedNode();
-      const members = sel?.kind === 'group' && T.contains(sel, layer.id) ? T.descendantLayers(sel) : [layer];
-      editor.drag = { type: 'layers', start: pt, members: members.map((l) => ({ l, ox: l.x, oy: l.y })) };
+      const moving = sel?.kind === 'group' && T.contains(sel, layer.id) ? sel : layer;
+      const members = T.descendantLayers(moving);
+      editor.drag = {
+        type: 'layers',
+        start: pt,
+        members: members.map((l) => ({ l, ox: l.x, oy: l.y })),
+        shapes: shapesAttachedTo(idsIn(moving)).map((s) => ({ s, orig: s.geometry })),
+      };
       if (members.length === 1 && selectedLayer() !== layer) select('layer', layer.id);
       break;
     }
@@ -804,6 +1065,7 @@ function onDrag(e) {
       m.l.y = m.oy + dy;
       m.l.item?.setPosition(Pt(m.l.x, m.l.y), true);
     }
+    for (const a of d.shapes) a.s.geometry = translateShape(a.orig, dx, dy);
     d.moved = true;
     editor.fade.refresh();
     renderOverlay();
@@ -896,7 +1158,13 @@ document.addEventListener('keydown', (e) => {
   if ($('#editor-view').hidden || $('#library-dialog').open) return;
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
-  if (typing) return;
+  if (typing) return; // text fields keep their own undo
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (editor.tool === 'polygon' && editor.draft) {
     if (e.key === 'Enter') { finishPolygon(); return; }
     if (e.key === 'Escape') { editor.draft = null; renderOverlay(); return; }
@@ -981,34 +1249,97 @@ function serializeTree(list) {
     }));
 }
 
-export async function save() {
-  if (!editor.map) return;
-  const unlinked = editor.shapes.filter((s) => s.kind === 'hitbox' && !s.target_map_id).length;
+const SHAPE_FIELDS = ['id', 'kind', 'geometry', 'target_map_id', 'target_layer_id', 'action', 'url', 'title', 'body', 'color', 'attach_id', 'image_id'];
+
+// Save the draft. Resolves true on success.
+export async function save({ quiet = false } = {}) {
+  if (!editor.map) return false;
+  const unlinked = editor.shapes.filter((s) => s.kind === 'hitbox' && ((s.action || 'map') === 'map' ? !s.target_map_id : !s.url)).length;
   const btn = $('#save-btn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try {
     const name = $('#map-name-input').value.trim() || editor.map.name;
-    const settings = { name, background: $('#map-bg-input').value };
+    const settings = { name, background: $('#map-bg-input').value, home_view: editor.homeView };
     if ($('#map-default-input').checked) settings.is_default = true;
     await adminApi(`/api/admin/maps/${editor.map.id}`, { method: 'PATCH', body: settings });
     await adminApi(`/api/admin/maps/${editor.map.id}/content`, {
       method: 'PUT',
       body: {
         tree: serializeTree(editor.tree),
-        shapes: editor.shapes.map(({ id, kind, geometry, target_map_id, title, body, color }) => ({ id, kind, geometry, target_map_id, title, body, color })),
+        shapes: editor.shapes.map((sh) => Object.fromEntries(SHAPE_FIELDS.map((k) => [k, sh[k] ?? null]))),
       },
     });
     editor.map.name = name;
+    if (editor.captureTimer) captureNow();
+    editor.saved = snapshot();
+    editor.unpublished = true;
     setDirty(false);
+    renderPublishState();
     btn.textContent = 'Saved ✓';
-    if (unlinked) setTimeout(() => alert(`Saved. Note: ${unlinked} hitbox(es) don't link to a map yet and won't be clickable in the viewer.`), 50);
+    if (unlinked && !quiet) setTimeout(() => alert(`Saved. Note: ${unlinked} hitbox(es) have no target yet and won't be clickable in the viewer.`), 50);
   } catch (err) {
     btn.textContent = 'Save';
     alert(`Save failed: ${err.message}`);
-    return;
+    return false;
   } finally {
     btn.disabled = false;
   }
   setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+  return true;
 }
+
+async function publish() {
+  if (editor.dirty && !(await save({ quiet: true }))) return;
+  const btn = $('#publish-btn');
+  btn.disabled = true;
+  try {
+    await adminApi(`/api/admin/maps/${editor.map.id}/publish`, { method: 'POST' });
+    editor.map.published_at = Date.now();
+    editor.unpublished = false;
+    renderPublishState();
+    btn.textContent = 'Published ✓';
+    setTimeout(() => { btn.textContent = 'Publish'; }, 1600);
+  } catch (err) {
+    alert(`Publish failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function preview() {
+  // The preview shows the saved draft, so save first.
+  const win = window.open('about:blank', '_blank');
+  if (editor.dirty && !(await save({ quiet: true }))) { win?.close(); return; }
+  const url = `/?map=${editor.map.id}&preview=1`;
+  if (win) win.location = url; else window.open(url, '_blank');
+}
+
+async function discardDraft() {
+  if (!confirm('Throw away every change since the last publish and go back to what visitors see? This cannot be undone.')) return;
+  await adminApi(`/api/admin/maps/${editor.map.id}/revert`, { method: 'POST' });
+  setDirty(false);
+  openEditor(editor.map.id);
+}
+
+$('#publish-btn').addEventListener('click', publish);
+$('#preview-btn').addEventListener('click', preview);
+$('#discard-btn').addEventListener('click', discardDraft);
+$('#undo-btn').addEventListener('click', undo);
+$('#redo-btn').addEventListener('click', redo);
+
+$('#home-view-set').addEventListener('click', () => {
+  const b = editor.viewer.viewport.getBounds();
+  editor.homeView = { x: b.x, y: b.y, w: b.width, h: b.height };
+  setDirty();
+  renderHomeView();
+});
+$('#home-view-clear').addEventListener('click', () => {
+  editor.homeView = null;
+  setDirty();
+  renderHomeView();
+});
+$('#home-view-go').addEventListener('click', () => {
+  const v = editor.homeView;
+  if (v) editor.viewer.viewport.fitBounds(new OpenSeadragon.Rect(v.x, v.y, v.w, v.h));
+});

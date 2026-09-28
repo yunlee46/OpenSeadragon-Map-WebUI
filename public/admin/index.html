@@ -26,6 +26,7 @@
       <nav>
         <a href="#/maps" data-nav="maps">Maps</a>
         <a href="#/images" data-nav="images">Images</a>
+        <a href="#/planner" data-nav="planner">Planner</a>
         <a href="#/settings" data-nav="settings">Types &amp; settings</a>
       </nav>
       <div class="spacer"></div>
@@ -58,6 +59,19 @@
         <span>JPG, PNG, TIFF, WebP… are tiled automatically. You can also upload a <code>.zip</code> containing a Deep Zoom image (<code>name.dzi</code> + <code>name_files/</code>).</span>
       </label>
       <div id="upload-progress" class="progress" hidden><div></div><span></span></div>
+      <div class="filter-bar">
+        <input id="lib-search" type="search" placeholder="Search images…">
+        <select id="lib-type"><option value="">All types</option></select>
+        <select id="lib-status">
+          <option value="">Any status</option>
+          <option value="ready">Ready</option>
+          <option value="processing">Tiling</option>
+          <option value="error">Failed</option>
+        </select>
+        <label class="check"><input type="checkbox" id="lib-unused"> Not on any map</label>
+        <span id="lib-count" class="muted small"></span>
+      </div>
+      <input type="file" id="replace-input" accept="image/*,.tif,.tiff,.zip" hidden>
       <div id="images-list" class="grid"></div>
     </section>
 
@@ -83,6 +97,49 @@
         </span>
       </label>
       <p class="hint">Viewers and the editor can adjust this with a slider. This is where it starts.</p>
+
+      <div class="page-head spaced"><h2>Backup &amp; restore</h2></div>
+      <p class="hint">A backup is one zip with everything: maps, drafts, images and their tiles, the planner and its reference images. It can be large.</p>
+      <div class="btn-row">
+        <a class="btn primary" href="/api/admin/backup" download>Download backup</a>
+        <button class="btn danger" id="restore-btn">Restore from backup…</button>
+        <input type="file" id="restore-input" accept=".zip" hidden>
+      </div>
+      <div id="restore-progress" class="progress" hidden><div></div><span></span></div>
+      <p class="hint small">Restoring replaces everything with the backup's contents and restarts the server. The current data is kept in a <code>pre-restore-…</code> folder inside the data volume until the next restore.</p>
+    </section>
+
+    <!-- Planner -->
+    <section id="planner-view" class="page" hidden>
+      <div class="page-head">
+        <h2>Planner</h2>
+        <form id="new-plan-form" class="inline-form">
+          <input name="title" placeholder="What image do you still need?" required maxlength="200">
+          <button class="btn primary">Add</button>
+        </form>
+      </div>
+      <p class="hint">A to-do list of images to make. Use <b>⤒ Add image</b> on an item to upload it: it goes into the library with the item's name and type, and the item is marked done. Items planned for a map show up first when you add images in that map's editor.</p>
+      <div class="filter-bar">
+        <input id="plan-search" type="search" placeholder="Search…">
+        <select id="plan-status">
+          <option value="open">Not done</option>
+          <option value="">All</option>
+          <option value="idea">Idea</option>
+          <option value="progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+        <select id="plan-priority">
+          <option value="">Any priority</option>
+          <option value="2">High</option>
+          <option value="1">Normal</option>
+          <option value="0">Low</option>
+        </select>
+        <select id="plan-type"><option value="">Any type</option></select>
+        <span id="plan-count" class="muted small"></span>
+      </div>
+      <input type="file" id="plan-image-input" accept="image/*,.tif,.tiff,.zip" hidden>
+      <input type="file" id="plan-ref-input" accept="image/*" multiple hidden>
+      <div id="plan-list" class="plan-list"></div>
     </section>
 
     <!-- Map editor -->
@@ -109,9 +166,21 @@
 
       <aside class="panel">
         <div class="panel-head">
-          <a href="#/maps" class="btn ghost small">&larr; Maps</a>
-          <span id="dirty" class="dirty" hidden>Unsaved changes</span>
-          <button id="save-btn" class="btn primary">Save</button>
+          <div class="panel-row">
+            <a href="#/maps" class="btn ghost small">&larr; Maps</a>
+            <button id="undo-btn" class="btn ghost small icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+            <button id="redo-btn" class="btn ghost small icon-only" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+            <span id="dirty" class="dirty" hidden>Unsaved</span>
+            <button id="save-btn" class="btn primary" title="Save the draft (Ctrl+S)">Save</button>
+          </div>
+          <div class="panel-row publish-row">
+            <span id="publish-state" class="publish-state"></span>
+          </div>
+          <div class="panel-row">
+            <button id="publish-btn" class="btn small primary-outline" title="Make the saved draft visible to visitors">Publish</button>
+            <button id="preview-btn" class="btn small ghost" title="See the draft as visitors will">Preview ↗</button>
+            <button id="discard-btn" class="btn small danger" title="Go back to the published version" hidden>Discard draft</button>
+          </div>
         </div>
 
         <details class="section">
@@ -119,7 +188,15 @@
           <label>Name <input id="map-name-input" maxlength="200"></label>
           <label class="row">Background <input type="color" id="map-bg-input"></label>
           <label class="check"><input type="checkbox" id="map-default-input"> Default map (opens first)</label>
-          <a id="view-map-link" class="small" target="_blank">View this map ↗</a>
+          <div class="subsection">
+            <div class="small"><b>Starting view:</b> <span id="home-view-state"></span></div>
+            <div class="btn-row">
+              <button id="home-view-set" class="btn small" title="Visitors (and the home button) start at what you see now">Use current view</button>
+              <button id="home-view-go" class="btn small ghost">Go there</button>
+              <button id="home-view-clear" class="btn small ghost">Reset</button>
+            </div>
+          </div>
+          <a id="view-map-link" class="small" target="_blank">View published map ↗</a>
         </details>
 
         <details open class="section">
@@ -168,6 +245,25 @@
       <button class="btn ghost small" id="library-close">Close</button>
     </div>
     <div id="library-grid" class="grid picker"></div>
+  </dialog>
+
+  <!-- Link an existing library image to a planner item -->
+  <dialog id="link-dialog" class="dialog">
+    <div class="dialog-head">
+      <h3>Link a library image</h3>
+      <input id="link-search" type="search" placeholder="Search…">
+      <button class="btn ghost small" id="link-close">Close</button>
+    </div>
+    <div id="link-grid" class="grid picker"></div>
+  </dialog>
+
+  <!-- Full-size reference image -->
+  <dialog id="ref-dialog" class="dialog ref-dialog">
+    <div class="dialog-head">
+      <h3 id="ref-title"></h3>
+      <button class="btn ghost small" id="ref-close">Close</button>
+    </div>
+    <img id="ref-full" alt="">
   </dialog>
 
   <script type="module" src="/admin/admin.js"></script>

@@ -5,6 +5,7 @@ const Database = require('better-sqlite3');
 const { DATA_DIR } = require('./config');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+require('./restore').applyPendingRestore(DATA_DIR);
 const db = new Database(path.join(DATA_DIR, 'app.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -104,6 +105,51 @@ const migrations = [
     add.run(newId(), 'character', 1, 0, 2);
     db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('focus_opacity', '0.3')`).run();
   },
+  // 2: draft/publish, starting views, richer shapes, image replacement, planner
+  () => {
+    db.exec(`
+      ALTER TABLE maps ADD COLUMN home_view TEXT;        -- JSON {x,y,w,h}: where the viewer starts
+      ALTER TABLE maps ADD COLUMN published_json TEXT;   -- snapshot visitors see
+      ALTER TABLE maps ADD COLUMN published_at INTEGER;
+      ALTER TABLE maps ADD COLUMN draft_at INTEGER;      -- last saved change to the draft
+
+      ALTER TABLE shapes ADD COLUMN attach_id TEXT;      -- layer or group the shape moves/hides with
+      ALTER TABLE shapes ADD COLUMN action TEXT NOT NULL DEFAULT 'map';  -- hitbox: map | url
+      ALTER TABLE shapes ADD COLUMN url TEXT;
+      ALTER TABLE shapes ADD COLUMN target_layer_id TEXT; -- image to focus on the target map
+      ALTER TABLE shapes ADD COLUMN image_id TEXT REFERENCES images(id) ON DELETE SET NULL; -- picture in a note
+
+      ALTER TABLE images ADD COLUMN thumb_path TEXT;
+      ALTER TABLE images ADD COLUMN replace_status TEXT;  -- processing | error while a new file is being tiled
+      ALTER TABLE images ADD COLUMN replace_error TEXT;
+      UPDATE images SET thumb_path = 'thumb.webp' WHERE thumb_path IS NULL;
+
+      CREATE TABLE planner_items (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        notes       TEXT NOT NULL DEFAULT '',
+        status      TEXT NOT NULL DEFAULT 'idea',     -- idea | progress | done
+        priority    INTEGER NOT NULL DEFAULT 1,         -- 0 low, 1 normal, 2 high
+        type_id     TEXT REFERENCES types(id) ON DELETE SET NULL,
+        map_id      TEXT REFERENCES maps(id) ON DELETE SET NULL,
+        group_id    TEXT,
+        image_id    TEXT REFERENCES images(id) ON DELETE SET NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE TABLE planner_refs (
+        id          TEXT PRIMARY KEY,
+        item_id     TEXT NOT NULL REFERENCES planner_items(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        file        TEXT NOT NULL,     -- file name inside refs/<id>/
+        mime        TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX planner_refs_item ON planner_refs(item_id);
+    `);
+    // Publish every existing map so visitors keep seeing them (done after startup; see content.js).
+    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('publish_all_pending', '1')`).run();
+  },
 ];
 
 const version = db.pragma('user_version', { simple: true });
@@ -126,6 +172,8 @@ function setSetting(key, value) {
 // Anything still "processing" at startup was interrupted by a restart.
 db.prepare(`UPDATE images SET status = 'error', error = 'Interrupted by server restart; upload again'
             WHERE status = 'processing'`).run();
+db.prepare(`UPDATE images SET replace_status = 'error', replace_error = 'Interrupted by server restart; try again'
+            WHERE replace_status = 'processing'`).run();
 
 
 module.exports = { db, newId, getSetting, setSetting };

@@ -31,9 +31,10 @@ export async function adminApi(url, opts) {
 }
 
 // Upload files to the library. Resolves with the new image ids (they are tiled in the background).
-export function uploadFiles(files, onProgress) {
+export function uploadFiles(files, onProgress, fields = {}) {
   return new Promise((resolve, reject) => {
     const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.append(k, v); // fields first, so the server sees them with the files
     for (const f of files) form.append('files', f);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/admin/images');

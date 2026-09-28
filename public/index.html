@@ -2,21 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Maps</title>
   <link rel="stylesheet" href="/css/style.css">
   <script src="/vendor/osd/openseadragon.min.js"></script>
 </head>
 <body class="viewer-page">
   <header class="topbar">
-    <button id="back" class="btn" title="Back to previous map" hidden>&larr; Back</button>
-    <h1 id="map-name">Loading…</h1>
+    <button id="back" class="btn icon-only" title="Back" aria-label="Back" hidden>&larr;</button>
+    <nav id="crumbs" class="crumbs" aria-label="Where you are"></nav>
     <div class="spacer"></div>
-    <label class="toggle"><input type="checkbox" id="show-shapes" checked> Show hitboxes &amp; notes</label>
+    <div class="search" id="search-box">
+      <button class="btn icon-only" id="search-open" title="Search" aria-label="Search">⌕</button>
+      <input id="search" type="search" placeholder="Search maps, images, notes…" autocomplete="off" aria-label="Search">
+      <ul id="search-results" class="search-results" hidden></ul>
+    </div>
+    <label class="toggle" title="Show hitboxes and notes"><input type="checkbox" id="show-shapes" checked> <span>Hitboxes &amp; notes</span></label>
     <select id="map-select" aria-label="Choose a map"></select>
-    <button id="panel-btn" class="btn" title="Images on this map" aria-expanded="false">☰ Images</button>
-    <a class="btn ghost" href="/admin/">Admin</a>
+    <button id="share-btn" class="btn icon-only" title="Copy a link to this view" aria-label="Copy a link to this view">🔗</button>
+    <button id="panel-btn" class="btn" title="Images on this map" aria-expanded="false">☰ <span>Images</span></button>
+    <a class="btn ghost admin-link" href="/admin/">Admin</a>
   </header>
+  <div id="preview-banner" class="preview-banner" hidden>Draft preview: this is what visitors will see after you publish. <a id="preview-edit" href="/admin/">Back to editor</a></div>
   <div class="viewer-body">
     <main id="viewer"></main>
     <aside id="side-panel" class="side-panel" hidden>
@@ -43,8 +50,10 @@
   <div id="popup" class="popup" hidden>
     <button class="close" aria-label="Close">&times;</button>
     <h3></h3>
-    <p></p>
+    <img class="note-image" alt="" hidden>
+    <div class="note-body"></div>
   </div>
+  <div id="toast" class="toast" hidden></div>
   <div id="empty" class="empty" hidden></div>
   <script type="module" src="/js/viewer.js"></script>
 </body>

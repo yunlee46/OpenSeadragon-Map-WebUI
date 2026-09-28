@@ -13,7 +13,8 @@
     "multer": "^2.4.0",
     "openseadragon": "^6.1.1",
     "sharp": "^0.35.5",
-    "yauzl": "^3.4.0"
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
   },
   "private": true,
   "engines": {

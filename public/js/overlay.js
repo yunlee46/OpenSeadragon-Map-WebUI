@@ -33,6 +33,18 @@ export function translateShape(g, dx, dy) {
   return { ...g, points: g.points.map(([x, y]) => [x + dx, y + dy]) };
 }
 
+export function scaleShape(g, ox, oy, k) {
+  if (g.type === 'rect') return { ...g, x: ox + (g.x - ox) * k, y: oy + (g.y - oy) * k, w: g.w * k, h: g.h * k };
+  return { ...g, points: g.points.map(([x, y]) => [ox + (x - ox) * k, oy + (y - oy) * k]) };
+}
+
+export function shapeBounds(g) {
+  const pts = shapePoints(g);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
 export function rectFromPoints(a, b) {
   return { type: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
 }
@@ -57,6 +69,8 @@ export class ShapeOverlay {
     this.shapes = [];
     this.opts = {};
     this.visible = true;
+    this.opacity = new Map(); // shape id -> opacity (shapes attached to fading images)
+    this.nodes = new Map();
 
     this.svg = el('svg', { class: 'shape-overlay' });
     this.world = el('g');        // scaled with the viewport: shapes
@@ -104,8 +118,13 @@ export class ShapeOverlay {
     this.shapes = shapes;
     this.opts = opts;
     this.world.replaceChildren();
+    this.nodes.clear();
 
-    for (const s of shapes) this.world.appendChild(this.shapeNode(s, s.id === opts.selectedId, s.id === opts.hoverId));
+    for (const s of shapes) {
+      const node = this.shapeNode(s, s.id === opts.selectedId, s.id === opts.hoverId);
+      this.nodes.set(s.id, node);
+      this.world.appendChild(node);
+    }
 
     if (opts.outline) {
       const o = opts.outline;
@@ -129,10 +148,21 @@ export class ShapeOverlay {
     const cls = ['shape', `shape-${s.kind}`];
     if (selected) cls.push('selected');
     if (hover) cls.push('hover');
-    if (s.kind === 'hitbox' && !s.target_map_id) cls.push('no-target');
+    if (s.kind === 'hitbox' && !(s.action === 'url' ? s.url : s.target_map_id)) cls.push('no-target');
     node.setAttribute('class', cls.join(' '));
     node.style.setProperty('--c', s.color || '#4da3ff');
+    const o = this.opacity.get(s.id);
+    if (o !== undefined && o < 1) node.style.opacity = o;
     return node;
+  }
+
+  // Set opacities without re-rendering (called every animation frame while images fade).
+  setOpacities(map) {
+    this.opacity = map;
+    for (const [id, node] of this.nodes) {
+      const o = map.get(id);
+      node.style.opacity = o === undefined || o >= 1 ? '' : o;
+    }
   }
 
   // Vertex handles for the selected shape, drawn in screen pixels so they don't grow with zoom.
@@ -150,6 +180,7 @@ export class ShapeOverlay {
   hitTest(pt, filter = () => true) {
     for (let i = this.shapes.length - 1; i >= 0; i--) {
       const s = this.shapes[i];
+      if ((this.opacity.get(s.id) ?? 1) < 0.05) continue; // faded out with its image
       if (filter(s) && pointInShape(pt.x, pt.y, s.geometry)) return s;
     }
     return null;

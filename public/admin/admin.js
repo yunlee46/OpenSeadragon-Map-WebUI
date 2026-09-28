@@ -1,6 +1,7 @@
 import { api } from '/js/overlay.js';
 import { $, h, adminApi, uploadFiles } from './common.js';
 import { editor, openEditor } from './editor.js';
+import { showPlanner, stopPlanner } from './planner.js';
 
 // ======================================================================
 // Auth
@@ -34,7 +35,7 @@ $('#logout').addEventListener('click', async () => {
 });
 
 // ======================================================================
-// Routing: #/maps, #/images, #/settings, #/edit/<id>
+// Routing: #/maps, #/images, #/planner, #/settings, #/edit/<id>
 // ======================================================================
 
 let currentRoute = null;
@@ -59,13 +60,15 @@ window.addEventListener('beforeunload', (e) => {
 
 function route() {
   const [, page, id] = location.hash.match(/^#\/(\w+)(?:\/(\w+))?/) || [null, 'maps'];
-  for (const v of ['maps', 'images', 'settings', 'editor']) $(`#${v}-view`).hidden = true;
+  for (const v of ['maps', 'images', 'planner', 'settings', 'editor']) $(`#${v}-view`).hidden = true;
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === page));
   stopImagePolling();
+  stopPlanner();
   editor.dirty = false;
   editor.session++;
   if (page === 'images') { currentRoute = 'images'; showImages(); }
   else if (page === 'settings') { currentRoute = 'settings'; showSettings(); }
+  else if (page === 'planner') { currentRoute = 'planner'; showPlanner(); }
   else if (page === 'edit' && id) { currentRoute = `edit:${id}`; openEditor(id); }
   else { currentRoute = 'maps'; showMaps(); }
 }
@@ -76,17 +79,19 @@ function route() {
 
 async function showMaps() {
   $('#maps-view').hidden = false;
-  const maps = await adminApi('/api/maps');
+  const maps = await adminApi('/api/admin/maps');
   const tbody = $('#maps-list');
   tbody.replaceChildren();
   if (!maps.length) tbody.append(h('tr', {}, h('td', { colSpan: 3, class: 'muted' }, 'No maps yet. Create one above.')));
   for (const m of maps) {
     tbody.append(h('tr', {},
-      h('td', {}, h('a', { href: `#/edit/${m.id}` }, m.name), m.is_default ? h('span', { class: 'badge' }, 'default') : null),
+      h('td', {}, h('a', { href: `#/edit/${m.id}` }, m.name), m.is_default ? h('span', { class: 'badge' }, 'default') : null,
+        !m.published_at ? h('span', { class: 'badge warn' }, 'not published') : m.unpublished ? h('span', { class: 'badge warn' }, 'unpublished changes') : null),
       h('td', { class: 'muted' }, `${m.layer_count} image${m.layer_count === 1 ? '' : 's'}, ${m.shape_count} shape${m.shape_count === 1 ? '' : 's'}`),
       h('td', { class: 'actions' },
         h('a', { class: 'btn small', href: `#/edit/${m.id}` }, 'Edit'),
-        h('a', { class: 'btn small ghost', href: `/?map=${m.id}`, target: '_blank' }, 'View'),
+        m.unpublished ? h('button', { class: 'btn small primary-outline', onclick: () => publishMap(m) }, 'Publish') : null,
+        h('a', { class: 'btn small ghost', href: m.published_at ? `/?map=${m.id}` : `/?map=${m.id}&preview=1`, target: '_blank' }, m.published_at ? 'View' : 'Preview'),
         m.is_default ? null : h('button', { class: 'btn small ghost', onclick: () => setDefault(m) }, 'Make default'),
         h('button', { class: 'btn small ghost', onclick: () => renameMap(m) }, 'Rename'),
         h('button', { class: 'btn small danger', onclick: () => deleteMap(m) }, 'Delete'),
@@ -104,6 +109,10 @@ $('#new-map-form').addEventListener('submit', async (e) => {
   location.hash = `#/edit/${id}`;
 });
 
+async function publishMap(m) {
+  await adminApi(`/api/admin/maps/${m.id}/publish`, { method: 'POST' });
+  showMaps();
+}
 async function setDefault(m) {
   await adminApi(`/api/admin/maps/${m.id}`, { method: 'PATCH', body: { is_default: true } });
   showMaps();
@@ -127,21 +136,46 @@ async function deleteMap(m) {
 let imagePoll = null;
 const stopImagePolling = () => { clearTimeout(imagePoll); imagePoll = null; };
 
+let library = { images: [], types: [] };
+
 async function showImages() {
   $('#images-view').hidden = false;
   const [images, types] = await Promise.all([adminApi('/api/admin/images'), adminApi('/api/types')]);
-  const grid = $('#images-list');
-  grid.replaceChildren();
-  if (!images.length) grid.append(h('p', { class: 'muted' }, 'No images yet.'));
-  for (const img of images) grid.append(imageCard(img, types));
+  library = { images, types };
+  const typeFilter = $('#lib-type');
+  const keep = typeFilter.value;
+  typeFilter.replaceChildren(h('option', { value: '' }, 'All types'), h('option', { value: 'none' }, 'No type'),
+    ...types.map((t) => h('option', { value: t.id }, t.name)));
+  typeFilter.value = keep;
+  renderLibrary();
 
   stopImagePolling();
-  if (images.some((i) => i.status === 'processing') && currentRoute === 'images') {
-    imagePoll = setTimeout(showImages, 2000);
-  }
+  const busy = images.some((i) => i.status === 'processing' || i.replace_status === 'processing');
+  if (busy && currentRoute === 'images') imagePoll = setTimeout(showImages, 2000);
+}
+
+function renderLibrary() {
+  const q = $('#lib-search').value.trim().toLowerCase();
+  const type = $('#lib-type').value;
+  const status = $('#lib-status').value;
+  const unused = $('#lib-unused').checked;
+  const { images, types } = library;
+  const shown = images.filter((i) => (!q || i.name.toLowerCase().includes(q))
+    && (!type || (type === 'none' ? !i.type_id : i.type_id === type))
+    && (!status || i.status === status)
+    && (!unused || !i.used_in.length));
+  $('#lib-count').textContent = images.length ? `${shown.length} of ${images.length}` : '';
+  const grid = $('#images-list');
+  grid.replaceChildren(...(shown.length ? shown.map((img) => imageCard(img, types))
+    : [h('p', { class: 'muted' }, images.length ? 'No images match these filters.' : 'No images yet.')]));
+}
+
+for (const id of ['lib-search', 'lib-type', 'lib-status', 'lib-unused']) {
+  $(`#${id}`).addEventListener(id === 'lib-search' ? 'input' : 'change', renderLibrary);
 }
 
 function imageCard(img, types) {
+  const replacing = img.replace_status === 'processing';
   const thumb = img.status === 'ready'
     ? h('img', { src: img.thumb_url, alt: '', loading: 'lazy', onerror: (e) => e.target.replaceWith(h('div', { class: 'thumb-missing' }, 'no preview')) })
     : h('div', { class: `thumb-status ${img.status}` }, img.status === 'processing' ? 'Tiling…' : 'Failed');
@@ -150,24 +184,58 @@ function imageCard(img, types) {
     title: 'Image type',
     onchange: async (e) => {
       await adminApi(`/api/admin/images/${img.id}`, { method: 'PATCH', body: { type_id: e.target.value || null } });
+      img.type_id = e.target.value || null;
     },
   },
   h('option', { value: '', selected: !img.type_id }, 'No type'),
   ...types.map((t) => h('option', { value: t.id, selected: img.type_id === t.id }, t.name)));
 
   return h('div', { class: 'card image-card' },
-    h('div', { class: 'thumb' }, thumb),
+    h('div', { class: 'thumb' }, thumb, replacing ? h('div', { class: 'thumb-overlay' }, 'Replacing…') : null),
     h('div', { class: 'name', title: img.name }, img.name),
     img.status === 'ready' ? h('div', { class: 'muted small' }, `${img.width.toLocaleString()} × ${img.height.toLocaleString()} px`) : null,
     img.status === 'error' ? h('div', { class: 'error small' }, img.error) : null,
+    img.replace_status === 'error' ? h('div', { class: 'error small' }, `Replacing failed: ${img.replace_error}`) : null,
     img.used_in.length ? h('div', { class: 'muted small' }, 'On: ', img.used_in.map((m) => m.name).join(', ')) : null,
+    img.planner_item ? h('div', { class: 'small planned-note' }, h('a', { href: '#/planner' }, `From the planner: ${img.planner_item.title}`)) : null,
     h('label', { class: 'row small' }, 'Type', typeSelect),
     h('div', { class: 'actions' },
       h('button', { class: 'btn small ghost', onclick: () => renameImage(img) }, 'Rename'),
+      h('button', {
+        class: 'btn small ghost',
+        disabled: img.status === 'processing' || replacing,
+        title: 'Upload a new file for this image. Every map keeps its placement, type and hitboxes.',
+        onclick: () => replaceImage(img),
+      }, 'Replace file'),
       h('button', { class: 'btn small danger', onclick: () => deleteImage(img) }, 'Delete'),
     ),
   );
 }
+
+let replaceTarget = null;
+function replaceImage(img) {
+  replaceTarget = img;
+  $('#replace-input').click();
+}
+$('#replace-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  const img = replaceTarget;
+  if (!file || !img) return;
+  if (img.used_in.length && !confirm(`Replace the file of "${img.name}"? It stays on ${img.used_in.map((m) => m.name).join(', ')} at the same place and width. If the new file has a different shape, its height changes.`)) return;
+  const form = new FormData();
+  form.append('file', file);
+  const bar = $('#upload-progress');
+  bar.hidden = false;
+  bar.lastElementChild.textContent = `Uploading replacement for ${img.name}…`;
+  try {
+    await adminApi(`/api/admin/images/${img.id}/replace`, { method: 'POST', body: form });
+  } catch (err) {
+    alert(err.message);
+  }
+  bar.hidden = true;
+  showImages();
+});
 
 async function renameImage(img) {
   const name = prompt('New name for this image:', img.name);
@@ -260,5 +328,60 @@ $('#focus-default').addEventListener('input', (e) => {
 $('#focus-default').addEventListener('change', (e) => {
   adminApi('/api/admin/settings', { method: 'PATCH', body: { focus_opacity: parseFloat(e.target.value) } });
 });
+
+// ---------- backup & restore ----------
+
+$('#restore-btn').addEventListener('click', () => $('#restore-input').click());
+$('#restore-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!confirm(`Restore "${file.name}"?\n\nEverything currently in the app (maps, images, planner) is replaced by the backup, and the server restarts. The current data is kept in a pre-restore folder in the data volume until the next restore.`)) return;
+  const form = new FormData();
+  form.append('file', file);
+  const bar = $('#restore-progress');
+  bar.hidden = false;
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/admin/restore');
+  xhr.upload.onprogress = (ev) => {
+    if (!ev.lengthComputable) return;
+    const pct = Math.round((ev.loaded / ev.total) * 100);
+    bar.firstElementChild.style.width = `${pct}%`;
+    bar.lastElementChild.textContent = pct < 100 ? `Uploading backup… ${pct}%` : 'Checking the backup…';
+  };
+  xhr.onload = () => {
+    let data = {};
+    try { data = JSON.parse(xhr.responseText); } catch { /* keep empty */ }
+    if (xhr.status >= 400) {
+      bar.hidden = true;
+      alert(`Restore failed: ${data.error || xhr.status}`);
+      return;
+    }
+    bar.lastElementChild.textContent = 'Restoring… the server is restarting';
+    waitForRestart();
+  };
+  xhr.onerror = () => { bar.hidden = true; alert('Restore failed (network error)'); };
+  xhr.send(form);
+});
+
+// Poll until the server answers again after restarting, then reload.
+function waitForRestart() {
+  let seenDown = false;
+  const started = Date.now();
+  const tick = async () => {
+    try {
+      const r = await fetch('/api/me', { cache: 'no-store' });
+      if (r.ok && (seenDown || Date.now() - started > 8000)) { location.hash = '#/maps'; location.reload(); return; }
+    } catch {
+      seenDown = true;
+    }
+    if (Date.now() - started > 120000) {
+      $('#restore-progress').lastElementChild.textContent = 'The server has not come back yet. If you run it without Docker, start it again by hand.';
+      return;
+    }
+    setTimeout(tick, 1000);
+  };
+  setTimeout(tick, 1000);
+}
 
 start();

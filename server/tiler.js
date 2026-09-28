@@ -125,8 +125,12 @@ async function tileImage(input, outDir) {
   return dzi;
 }
 
-async function processUpload(imageId, uploadPath) {
-  const outDir = path.join(TILES_DIR, imageId);
+// Tiles go into tiles/<imageId>/<version>/ so a replacement can be built next to the old tiles
+// and gets fresh URLs (tiles are cached by browsers as immutable).
+async function processUpload(imageId, uploadPath, { replace = false } = {}) {
+  const version = `v${Date.now().toString(36)}`;
+  const imageDir = path.join(TILES_DIR, imageId);
+  const outDir = path.join(imageDir, version);
   try {
     await fsp.mkdir(outDir, { recursive: true });
     let dzi;
@@ -140,22 +144,32 @@ async function processUpload(imageId, uploadPath) {
       dzi = await tileImage(uploadPath, outDir);
     }
     const info = await readDzi(dzi);
-    const { width, height } = info;
     await makeThumb(info, outDir);
-    const rel = path.relative(outDir, dzi).split(path.sep).join('/');
-    const res = db.prepare(`UPDATE images SET status='ready', error=NULL, width=?, height=?, dzi_path=? WHERE id=?`)
-      .run(width, height, rel, imageId);
-    // The image was deleted while it was being processed.
-    if (res.changes === 0) await fsp.rm(outDir, { recursive: true, force: true });
+    const rel = (p) => path.relative(imageDir, p).split(path.sep).join('/');
+    const res = db.prepare(`UPDATE images SET status='ready', error=NULL, replace_status=NULL, replace_error=NULL,
+                               width=?, height=?, dzi_path=?, thumb_path=? WHERE id=?`)
+      .run(info.width, info.height, rel(dzi), rel(path.join(outDir, 'thumb.webp')), imageId);
+    if (res.changes === 0) {
+      // The image was deleted while it was being processed.
+      await fsp.rm(imageDir, { recursive: true, force: true });
+    } else if (replace) {
+      // Remove the previous version (and tiles from before versioned folders existed).
+      for (const name of await fsp.readdir(imageDir)) {
+        if (name !== version) await fsp.rm(path.join(imageDir, name), { recursive: true, force: true });
+      }
+    }
   } catch (err) {
     console.error(`Processing image ${imageId} failed:`, err.message);
     await fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
-    db.prepare(`UPDATE images SET status='error', error=? WHERE id=?`).run(String(err.message).slice(0, 500), imageId);
+    const msg = String(err.message).slice(0, 500);
+    if (replace) db.prepare(`UPDATE images SET replace_status='error', replace_error=? WHERE id=?`).run(msg, imageId);
+    else db.prepare(`UPDATE images SET status='error', error=? WHERE id=?`).run(msg, imageId);
   } finally {
     await fsp.rm(uploadPath, { force: true }).catch(() => {});
   }
 }
 
 const queueUpload = (imageId, uploadPath) => enqueue(() => processUpload(imageId, uploadPath));
+const queueReplace = (imageId, uploadPath) => enqueue(() => processUpload(imageId, uploadPath, { replace: true }));
 
-module.exports = { queueUpload };
+module.exports = { queueUpload, queueReplace, extractZip, isZip };

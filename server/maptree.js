@@ -2,6 +2,7 @@
 // Siblings are stored with `pos` in list order, top of the list first. The top of the list is drawn on top.
 
 const { db, newId } = require('./db');
+const { dziUrl, thumbUrl } = require('./util');
 
 const ID_RE = /^[0-9a-f]{16}$/;
 const FADE_MODES = ['inherit', 'always', 'never'];
@@ -15,31 +16,28 @@ class TreeError extends Error {
   constructor(message) { super(message); this.status = 400; }
 }
 
-const dziUrl = (imageId, dziPath) => `/tiles/${imageId}/${dziPath.split('/').map(encodeURIComponent).join('/')}`;
+const imageById = db.prepare('SELECT * FROM images WHERE id = ?');
 
-function loadTree(mapId, { includeHidden }) {
-  const groups = db.prepare('SELECT * FROM layer_groups WHERE map_id = ? ORDER BY pos, rowid').all(mapId);
-  const layers = db.prepare(`
-    SELECT l.*, i.name AS image_name, i.width AS px_width, i.height AS px_height, i.dzi_path,
-           i.status, i.type_id AS image_type_id
-    FROM layers l JOIN images i ON i.id = l.image_id
-    WHERE l.map_id = ? AND i.status = 'ready' ORDER BY l.pos, l.rowid`).all(mapId);
-
+// Build the nested tree from group and layer rows (from the draft tables or a published snapshot).
+// Layers whose image is missing or not ready are skipped.
+function buildTree(groupRows, layerRows) {
   const nodes = new Map();
-  for (const g of groups) {
+  for (const g of groupRows) {
     nodes.set(g.id, {
       kind: 'group', id: g.id, parent_id: g.parent_id, pos: g.pos,
       name: g.name, hidden: !!g.hidden, collapsed: !!g.collapsed, children: [],
     });
   }
-  for (const l of layers) {
+  for (const l of layerRows) {
+    const img = imageById.get(l.image_id);
+    if (!img || img.status !== 'ready') continue;
     nodes.set(l.id, {
       kind: 'layer', id: l.id, parent_id: l.parent_id, pos: l.pos,
-      image_id: l.image_id, image_name: l.image_name, name: l.name || null,
+      image_id: l.image_id, image_name: img.name, name: l.name || null,
       x: l.x, y: l.y, width: l.width, opacity: l.opacity,
-      px_width: l.px_width, px_height: l.px_height,
-      dzi_url: dziUrl(l.image_id, l.dzi_path), thumb_url: `/tiles/${l.image_id}/thumb.webp`,
-      image_type_id: l.image_type_id, type_override: l.type_override,
+      px_width: img.width, px_height: img.height,
+      dzi_url: dziUrl(img), thumb_url: thumbUrl(img),
+      image_type_id: img.type_id, type_override: l.type_override,
       fade_mode: l.fade_mode, hidden: !!l.hidden, zoom_fade: l.zoom_fade,
     });
   }
@@ -58,10 +56,17 @@ function loadTree(mapId, { includeHidden }) {
     }
   };
   sortRec(roots);
+  return roots;
+}
 
-  if (includeHidden) return roots;
-  const prune = (list) => list.filter((n) => !n.hidden).map((n) => (n.children ? { ...n, children: prune(n.children) } : n));
-  return prune(roots);
+const pruneHidden = (list) => list.filter((n) => !n.hidden).map((n) => (n.children ? { ...n, children: pruneHidden(n.children) } : n));
+
+function treeIds(list, out = new Set()) {
+  for (const n of list) {
+    out.add(n.id);
+    if (n.children) treeIds(n.children, out);
+  }
+  return out;
 }
 
 // Validate a tree from the editor and flatten it into rows.
@@ -129,4 +134,4 @@ function saveTree(mapId, rows) {
   for (const l of rows.layers) insLayer.run({ ...l, map_id: mapId });
 }
 
-module.exports = { loadTree, flattenTree, saveTree };
+module.exports = { buildTree, pruneHidden, treeIds, flattenTree, saveTree };
