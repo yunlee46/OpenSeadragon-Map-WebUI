@@ -1,0 +1,6 @@
+# Build the image from this folder instead of pulling it from GitHub (for testing local changes):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  openseadragon-map-webui:
+    build: .
+    image: openseadragon-map-webui:local

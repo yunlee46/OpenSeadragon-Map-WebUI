@@ -1,0 +1,22 @@
+{
+  "name": "openseadragon-map-webui",
+  "version": "1.0.0",
+  "description": "Self-hosted OpenSeadragon maps with an admin panel, linked hitboxes and annotations",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.22.3",
+    "multer": "^2.4.0",
+    "openseadragon": "^6.1.1",
+    "sharp": "^0.35.5",
+    "yauzl": "^3.4.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

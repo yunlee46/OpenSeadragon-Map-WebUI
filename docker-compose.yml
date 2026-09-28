@@ -1,0 +1,22 @@
+services:
+  openseadragon-map-webui:
+    # Published by GitHub Actions on every push to main. Your NAS checks this tag for updates.
+    image: ghcr.io/yunlee46/openseadragon-map-webui:latest
+    container_name: openseadragon-map-webui
+    restart: unless-stopped
+    init: true                      # clean shutdown when the container is stopped
+    ports:
+      - "8080:8080"                 # change the left side to use another port on the NAS
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in the .env file}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in the .env file}
+      SESSION_HOURS: ${SESSION_HOURS:-24}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-4096}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}   # set true when served over HTTPS
+      TRUST_PROXY: ${TRUST_PROXY:-false}       # set true behind a reverse proxy
+    volumes:
+      - osd-data:/data              # database, tiles and thumbnails
+
+volumes:
+  osd-data:

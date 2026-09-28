@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Maps</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/vendor/osd/openseadragon.min.js"></script>
+</head>
+<body class="admin-page">
+
+  <!-- Login -->
+  <div id="login-view" class="login" hidden>
+    <form id="login-form" class="card">
+      <h1>Admin login</h1>
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="error" id="login-error"></p>
+      <button class="btn primary" type="submit">Log in</button>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1>Admin</h1>
+      <nav>
+        <a href="#/maps" data-nav="maps">Maps</a>
+        <a href="#/images" data-nav="images">Images</a>
+      </nav>
+      <div class="spacer"></div>
+      <a class="btn ghost" href="/" target="_blank">Open viewer ↗</a>
+      <button class="btn ghost" id="logout">Log out</button>
+    </header>
+
+    <!-- Maps list -->
+    <section id="maps-view" class="page" hidden>
+      <div class="page-head">
+        <h2>Maps</h2>
+        <form id="new-map-form" class="inline-form">
+          <input name="name" placeholder="New map name" required maxlength="200">
+          <button class="btn primary">Create map</button>
+        </form>
+      </div>
+      <p class="hint">Each map is a canvas. Place one or more images on it, then draw hitboxes that link to other maps and annotations with notes. The <b>default</b> map opens first in the viewer.</p>
+      <table class="list">
+        <thead><tr><th>Name</th><th>Images</th><th></th></tr></thead>
+        <tbody id="maps-list"></tbody>
+      </table>
+    </section>
+
+    <!-- Image library -->
+    <section id="images-view" class="page" hidden>
+      <div class="page-head"><h2>Image library</h2></div>
+      <label id="dropzone" class="dropzone">
+        <input type="file" id="file-input" multiple accept="image/*,.tif,.tiff,.zip" hidden>
+        <strong>Drop images here or click to choose</strong>
+        <span>JPG, PNG, TIFF, WebP… are tiled automatically. You can also upload a <code>.zip</code> containing a Deep Zoom image (<code>name.dzi</code> + <code>name_files/</code>).</span>
+      </label>
+      <div id="upload-progress" class="progress" hidden><div></div><span></span></div>
+      <div id="images-list" class="grid"></div>
+    </section>
+
+    <!-- Map editor -->
+    <section id="editor-view" class="editor" hidden>
+      <aside class="toolbar" id="toolbar">
+        <button data-tool="pan" title="Pan &amp; zoom (H)">✋<span>Pan</span></button>
+        <button data-tool="move" title="Move images (M)">✥<span>Move</span></button>
+        <button data-tool="select" title="Select &amp; edit shapes (S)">⬚<span>Select</span></button>
+        <hr>
+        <button data-tool="rect" title="Draw rectangle (R)">▭<span>Rect</span></button>
+        <button data-tool="polygon" title="Draw polygon (P) — click points, click the first point or press Enter to finish">⬠<span>Polygon</span></button>
+        <div class="draw-kind" title="What new shapes become">
+          <label><input type="radio" name="draw-kind" value="hitbox" checked> Hitbox</label>
+          <label><input type="radio" name="draw-kind" value="annotation"> Note</label>
+        </div>
+        <hr>
+        <button id="home-btn" title="Fit everything in view">⌂<span>Fit</span></button>
+      </aside>
+
+      <div class="editor-main">
+        <div id="editor-viewer"></div>
+        <div id="tool-hint" class="tool-hint"></div>
+      </div>
+
+      <aside class="panel">
+        <div class="panel-head">
+          <a href="#/maps" class="btn ghost small">&larr; Maps</a>
+          <span id="dirty" class="dirty" hidden>Unsaved changes</span>
+          <button id="save-btn" class="btn primary">Save</button>
+        </div>
+
+        <details open class="section">
+          <summary>Map settings</summary>
+          <label>Name <input id="map-name-input" maxlength="200"></label>
+          <label class="row">Background <input type="color" id="map-bg-input"></label>
+          <label class="check"><input type="checkbox" id="map-default-input"> Default map (opens first)</label>
+          <a id="view-map-link" class="small" target="_blank">View this map ↗</a>
+        </details>
+
+        <details open class="section">
+          <summary>Images on this map</summary>
+          <div class="inline-form">
+            <select id="add-image-select"></select>
+            <button id="add-image-btn" class="btn small">Add</button>
+          </div>
+          <ul id="layers-list" class="items"></ul>
+        </details>
+
+        <details open class="section">
+          <summary>Hitboxes &amp; notes</summary>
+          <ul id="shapes-list" class="items"></ul>
+        </details>
+
+        <div id="props" class="section props"></div>
+      </aside>
+    </section>
+  </div>
+
+  <script type="module" src="/admin/admin.js"></script>
+</body>
+</html>

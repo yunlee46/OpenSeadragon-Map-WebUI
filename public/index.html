@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maps</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/vendor/osd/openseadragon.min.js"></script>
+</head>
+<body class="viewer-page">
+  <header class="topbar">
+    <button id="back" class="btn" title="Back to previous map" hidden>&larr; Back</button>
+    <h1 id="map-name">Loading…</h1>
+    <div class="spacer"></div>
+    <label class="toggle"><input type="checkbox" id="show-shapes" checked> Show hitboxes &amp; notes</label>
+    <select id="map-select" aria-label="Choose a map"></select>
+    <a class="btn ghost" href="/admin/">Admin</a>
+  </header>
+  <main id="viewer"></main>
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="popup" class="popup" hidden>
+    <button class="close" aria-label="Close">&times;</button>
+    <h3></h3>
+    <p></p>
+  </div>
+  <div id="empty" class="empty" hidden></div>
+  <script type="module" src="/js/viewer.js"></script>
+</body>
+</html>
