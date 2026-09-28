@@ -4,7 +4,8 @@ const fsp = require('fs/promises');
 const express = require('express');
 const multer = require('multer');
 const config = require('./config');
-const { db, newId } = require('./db');
+const { db, newId, getSetting, setSetting } = require('./db');
+const { loadTree, flattenTree, saveTree } = require('./maptree');
 const auth = require('./auth');
 const { queueUpload } = require('./tiler');
 
@@ -46,6 +47,7 @@ function publicImage(img) {
     height: img.height,
     dzi_url: img.status === 'ready' ? dziUrl(img) : null,
     thumb_url: img.status === 'ready' ? `/tiles/${img.id}/thumb.webp` : null,
+    type_id: img.type_id || null,
     created_at: img.created_at,
   };
 }
@@ -98,25 +100,31 @@ app.get('/api/maps', (req, res) => {
     .map((m) => ({ ...m, is_default: !!m.is_default })));
 });
 
-app.get('/api/maps/:id', wrap((req, res) => {
-  const map = getMap(req.params.id);
-  const layers = db.prepare(`
-    SELECT l.*, i.name AS image_name, i.width AS px_width, i.height AS px_height, i.dzi_path, i.status
-    FROM layers l JOIN images i ON i.id = l.image_id
-    WHERE l.map_id = ? ORDER BY l.z, l.rowid`).all(map.id)
-    .filter((l) => l.status === 'ready')
-    .map((l) => ({
-      id: l.id, image_id: l.image_id, image_name: l.image_name,
-      x: l.x, y: l.y, width: l.width, opacity: l.opacity, z: l.z,
-      px_width: l.px_width, px_height: l.px_height,
-      dzi_url: dziUrl({ id: l.image_id, dzi_path: l.dzi_path }),
-    }));
+const listTypes = () => db.prepare(`
+  SELECT t.*, (SELECT COUNT(*) FROM images i WHERE i.type_id = t.id) AS image_count
+  FROM types t ORDER BY t.pos, t.rowid`).all()
+  .map((t) => ({ ...t, fade_focus: !!t.fade_focus, fade_zoom: !!t.fade_zoom }));
+
+const appSettings = () => ({ focus_opacity: parseFloat(getSetting('focus_opacity', '0.3')) });
+
+function mapPayload(map, includeHidden) {
   const shapes = db.prepare(`
     SELECT s.*, t.name AS target_name FROM shapes s LEFT JOIN maps t ON t.id = s.target_map_id
     WHERE s.map_id = ? ORDER BY s.rowid`).all(map.id)
     .map((s) => ({ ...s, geometry: JSON.parse(s.geometry), map_id: undefined }));
-  res.json({ id: map.id, name: map.name, background: map.background, is_default: !!map.is_default, layers, shapes });
-}));
+  return {
+    id: map.id, name: map.name, background: map.background, is_default: !!map.is_default,
+    tree: loadTree(map.id, { includeHidden }),
+    shapes,
+    types: listTypes(),
+    settings: appSettings(),
+  };
+}
+
+// Public: hidden images and groups are left out.
+app.get('/api/maps/:id', wrap((req, res) => res.json(mapPayload(getMap(req.params.id), false))));
+app.get('/api/types', (req, res) => res.json(listTypes()));
+app.get('/api/settings', (req, res) => res.json(appSettings()));
 
 // ---------- admin: maps ----------
 
@@ -165,22 +173,17 @@ admin.delete('/maps/:id', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-// Replace everything placed on a map (image layers, hitboxes, annotations) in one go.
+// Everything, including hidden images and groups, for the editor.
+admin.get('/maps/:id', wrap((req, res) => res.json(mapPayload(getMap(req.params.id), true))));
+
+// Replace everything placed on a map (image tree, hitboxes, annotations) in one go.
 admin.put('/maps/:id/content', wrap((req, res) => {
   const map = getMap(req.params.id);
-  const { layers, shapes } = req.body;
-  if (!Array.isArray(layers) || !Array.isArray(shapes)) throw new HttpError(400, 'layers and shapes must be arrays');
+  const { tree, shapes } = req.body;
+  if (!Array.isArray(tree) || !Array.isArray(shapes)) throw new HttpError(400, 'tree and shapes must be arrays');
 
-  const imageOk = db.prepare(`SELECT 1 FROM images WHERE id = ? AND status = 'ready'`);
+  const rows = flattenTree(tree);
   const mapExists = db.prepare('SELECT 1 FROM maps WHERE id = ?');
-
-  const cleanLayers = layers.map((l, i) => {
-    if (!l || !ID_RE.test(l.image_id) || !imageOk.get(l.image_id)) throw new HttpError(400, `Layer ${i + 1}: unknown image`);
-    if (![l.x, l.y, l.width].every(finite) || l.width <= 0) throw new HttpError(400, `Layer ${i + 1}: bad position or size`);
-    const opacity = finite(l.opacity) ? Math.min(1, Math.max(0, l.opacity)) : 1;
-    return { id: ID_RE.test(l.id) ? l.id : newId(), image_id: l.image_id, x: l.x, y: l.y, width: l.width, opacity, z: i };
-  });
-
   const cleanShapes = shapes.map((s, i) => {
     if (!s || !['hitbox', 'annotation'].includes(s.kind)) throw new HttpError(400, `Shape ${i + 1}: bad kind`);
     const geometry = validGeometry(s.geometry);
@@ -201,15 +204,61 @@ admin.put('/maps/:id/content', wrap((req, res) => {
     };
   });
 
-  const insLayer = db.prepare('INSERT INTO layers (id, map_id, image_id, x, y, width, opacity, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const insShape = db.prepare('INSERT INTO shapes (id, map_id, kind, geometry, target_map_id, title, body, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   db.transaction(() => {
-    db.prepare('DELETE FROM layers WHERE map_id = ?').run(map.id);
+    saveTree(map.id, rows);
     db.prepare('DELETE FROM shapes WHERE map_id = ?').run(map.id);
-    for (const l of cleanLayers) insLayer.run(l.id, map.id, l.image_id, l.x, l.y, l.width, l.opacity, l.z);
     for (const s of cleanShapes) insShape.run(s.id, map.id, s.kind, s.geometry, s.target_map_id, s.title, s.body, s.color);
   })();
   res.json({ ok: true });
+}));
+
+// ---------- admin: types & settings ----------
+
+function typeFields(body, partial) {
+  const out = {};
+  if (!partial || body.name !== undefined) {
+    const name = str(body.name, 60).trim();
+    if (!name) throw new HttpError(400, 'Type name cannot be empty');
+    out.name = name;
+  }
+  if (body.fade_focus !== undefined) out.fade_focus = body.fade_focus ? 1 : 0;
+  if (body.fade_zoom !== undefined) out.fade_zoom = body.fade_zoom ? 1 : 0;
+  return out;
+}
+
+admin.post('/types', wrap((req, res) => {
+  const f = typeFields(req.body, false);
+  const id = newId();
+  const pos = (db.prepare('SELECT MAX(pos) AS p FROM types').get().p ?? -1) + 1;
+  db.prepare('INSERT INTO types (id, name, fade_focus, fade_zoom, pos) VALUES (?, ?, ?, ?, ?)')
+    .run(id, f.name, f.fade_focus ?? 1, f.fade_zoom ?? 1, pos);
+  res.status(201).json({ id });
+}));
+
+admin.patch('/types/:id', wrap((req, res) => {
+  const f = typeFields(req.body, true);
+  const keys = Object.keys(f);
+  if (!keys.length) throw new HttpError(400, 'Nothing to change');
+  const r = db.prepare(`UPDATE types SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run({ ...f, id: req.params.id });
+  if (!r.changes) throw new HttpError(404, 'Type not found');
+  res.json({ ok: true });
+}));
+
+// Images and placements that used the type fall back to "no type" (ON DELETE SET NULL).
+admin.delete('/types/:id', wrap((req, res) => {
+  const r = db.prepare('DELETE FROM types WHERE id = ?').run(req.params.id);
+  if (!r.changes) throw new HttpError(404, 'Type not found');
+  res.json({ ok: true });
+}));
+
+admin.patch('/settings', wrap((req, res) => {
+  const { focus_opacity } = req.body;
+  if (focus_opacity !== undefined) {
+    if (!finite(focus_opacity) || focus_opacity < 0 || focus_opacity > 1) throw new HttpError(400, 'focus_opacity must be between 0 and 1');
+    setSetting('focus_opacity', focus_opacity);
+  }
+  res.json(appSettings());
 }));
 
 // ---------- admin: images ----------
@@ -242,10 +291,20 @@ admin.post('/images', upload.array('files'), wrap((req, res) => {
 }));
 
 admin.patch('/images/:id', wrap((req, res) => {
-  const name = str(req.body.name, 200).trim();
-  if (!name) throw new HttpError(400, 'Name cannot be empty');
-  const r = db.prepare('UPDATE images SET name = ? WHERE id = ?').run(name, req.params.id);
-  if (!r.changes) throw new HttpError(404, 'Image not found');
+  const img = db.prepare('SELECT id FROM images WHERE id = ?').get(req.params.id);
+  if (!img) throw new HttpError(404, 'Image not found');
+  const { name, type_id } = req.body;
+  db.transaction(() => {
+    if (name !== undefined) {
+      const n = str(name, 200).trim();
+      if (!n) throw new HttpError(400, 'Name cannot be empty');
+      db.prepare('UPDATE images SET name = ? WHERE id = ?').run(n, img.id);
+    }
+    if (type_id !== undefined) {
+      if (type_id !== null && !db.prepare('SELECT 1 FROM types WHERE id = ?').get(type_id)) throw new HttpError(400, 'Unknown type');
+      db.prepare('UPDATE images SET type_id = ? WHERE id = ?').run(type_id, img.id);
+    }
+  })();
   res.json({ ok: true });
 }));
 

@@ -6,6 +6,10 @@ A self-hosted [OpenSeadragon](https://openseadragon.github.io/) deep-zoom viewer
 - **Image library.** Upload normal images (JPG, PNG, TIFF, WebP…) and the server tiles them into Deep Zoom (DZI) with libvips. Or upload a `.zip` of an image you've already tiled (`name.dzi` + `name_files/`).
 - **Hitboxes.** Rectangles or polygons that take the viewer to another map when clicked. The Back button and browser history work.
 - **Notes (annotations).** Rectangles or polygons that show a title and text when clicked.
+- **Blender-style image list.** Nested groups you can collapse, drag and drop, and hide with an eye toggle. List order is stacking order, and a group can be moved on the canvas as one piece.
+- **Image types** (background, object, character, plus your own) decide which images fade in focus mode and zoom-reveal. Each image on a map can override its type or always/never fade.
+- **Focus mode.** Pick an image and the view flies to it while the other images fade. The fade amount is adjustable, with a default set in the admin.
+- **Zoom-reveal.** As you zoom into an image it turns transparent, revealing the one behind it, then the next one, layer by layer.
 - **Standard OpenSeadragon viewing:** zoom, pan, navigator minimap, rotation and full screen. Add `?debug=1` to the viewer URL to see tile borders and pyramid levels.
 
 ## Running with Docker
@@ -83,16 +87,22 @@ The volume name is `<folder>_osd-data`. Check it with `docker volume ls`.
 
 ## Using the admin panel
 
-1. **Images → upload.** Tiling runs in the background, one image at a time. Very large images can take a few minutes.
-2. **Maps → Create map.** This opens the editor.
-3. In the editor:
-   - **Add** an image from the library. Use **Move (M)** to drag it into place, and use the side panel for exact X/Y/width, opacity and stacking order.
-   - Pick **Hitbox** or **Note** in the toolbar. Then draw with **Rect (R)** (drag) or **Polygon (P)**: click points, then click the first point, double-click or press Enter to close the shape.
-   - **Select (S)**: click a shape to edit its target map, label, text and colour. Drag the shape to move it, or drag its corner handles to reshape it. The Delete key removes it.
-   - **Save** (or Ctrl+S). Nothing is saved until you do.
-4. Mark one map as the **default**. It's the one the viewer opens first.
+1. **Images → upload.** Tiling runs in the background, one image at a time. Very large images can take a few minutes. Give each image a **type** from the dropdown on its card.
+2. **Types & settings.** Create, rename and delete types, choose whether each type fades in focus mode and zoom-reveal, and set the default fade amount for focus mode.
+3. **Maps → Create map.** This opens the editor.
+4. In the editor's **Images on this map** section:
+   - The three icon buttons are **add from library** (pick from thumbnails), **upload** (new files are uploaded, tiled and placed automatically) and **new group**.
+   - Drag rows to reorder them or move them into groups. Higher in the list is drawn on top. The eye icon hides an image or group, which also hides it in the public viewer.
+   - **Right-click** an image or group, in the list or on the canvas, to focus it, rename it, set its type for this map only, set it to always or never fade, set the zoom at which it starts to zoom-reveal, move it into a new group or remove it. Deleting a group removes everything inside it from the map.
+   - With **Move (M)**, drag an image to move it. Select a group first to drag the whole group.
+5. **Preview** section: try focus mode (double-click an image or press **F**) and zoom-reveal while editing. "Make this the default" saves the current fade amount for everyone.
+6. **Hitboxes and notes**: pick **Hitbox** or **Note** in the toolbar, then draw with **Rect (R)** (drag) or **Polygon (P)**: click points, then click the first point, double-click or press Enter to close the shape. With **Select (S)**, click a shape to edit it, drag it to move it or drag its handles to reshape it.
+7. **Save** (or Ctrl+S). Nothing is saved until you do.
+8. Mark one map as the **default**. It's the one the viewer opens first.
 
-Deleting an image removes it from every map that uses it and deletes its tiles. Deleting a map leaves hitboxes that pointed to it unlinked.
+In the viewer, **☰ Images** opens a panel listing the map's images with thumbnails. Click an image to fly to it, and turn on focus mode or zoom-reveal from the panel.
+
+Deleting an image removes it from every map that uses it and deletes its tiles. Deleting a map leaves hitboxes that pointed to it unlinked. Deleting a type leaves its images with no type.
 
 Shapes use map coordinates, not image coordinates. If you move an image after drawing shapes on top of it, move the shapes too.
 
@@ -110,7 +120,9 @@ Data goes to `./data` unless `DATA_DIR` is set.
 ## Layout
 
 ```
-server/        Express app, SQLite (better-sqlite3), tiling (sharp/libvips), zip import (yauzl)
-public/        Viewer (index.html, js/viewer.js), shared SVG overlay (js/overlay.js), styles
-public/admin/  Admin panel and map editor
+server/        Express app, SQLite (better-sqlite3) with migrations, tiling (sharp/libvips), zip import (yauzl)
+  maptree.js   Loads and saves a map's nested image groups
+public/js/     Viewer, shared SVG overlay, image-tree helpers, fade controller (focus + zoom-reveal),
+               outliner (image list) and context menu
+public/admin/  Admin pages and the map editor
 ```

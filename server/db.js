@@ -9,6 +9,8 @@ const db = new Database(path.join(DATA_DIR, 'app.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+const newId = () => crypto.randomBytes(8).toString('hex');
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS images (
   id          TEXT PRIMARY KEY,
@@ -58,10 +60,72 @@ CREATE INDEX IF NOT EXISTS layers_map ON layers(map_id);
 CREATE INDEX IF NOT EXISTS shapes_map ON shapes(map_id);
 `);
 
+// ---------- migrations (PRAGMA user_version) ----------
+
+const migrations = [
+  // 1: image types, nested layer groups, per-placement fade settings, app settings
+  () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS types (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        fade_focus  INTEGER NOT NULL DEFAULT 1,   -- fades when another image is focused
+        fade_zoom   INTEGER NOT NULL DEFAULT 1,   -- fades in zoom-reveal
+        pos         INTEGER NOT NULL DEFAULT 0
+      );
+      -- Folders in a map's image list. parent_id is another group (NULL = top level).
+      CREATE TABLE IF NOT EXISTS layer_groups (
+        id         TEXT PRIMARY KEY,
+        map_id     TEXT NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+        parent_id  TEXT,
+        name       TEXT NOT NULL,
+        hidden     INTEGER NOT NULL DEFAULT 0,
+        collapsed  INTEGER NOT NULL DEFAULT 0,
+        pos        INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS groups_map ON layer_groups(map_id);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+      ALTER TABLE images ADD COLUMN type_id TEXT REFERENCES types(id) ON DELETE SET NULL;
+
+      -- pos orders siblings in the list, top first; z is the resulting draw order.
+      ALTER TABLE layers ADD COLUMN parent_id TEXT;
+      ALTER TABLE layers ADD COLUMN pos INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE layers ADD COLUMN name TEXT;
+      ALTER TABLE layers ADD COLUMN type_override TEXT REFERENCES types(id) ON DELETE SET NULL;
+      ALTER TABLE layers ADD COLUMN fade_mode TEXT NOT NULL DEFAULT 'inherit';  -- inherit | always | never
+      ALTER TABLE layers ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE layers ADD COLUMN zoom_fade REAL;   -- manual zoom-reveal start (OpenSeadragon zoom); NULL = automatic
+      UPDATE layers SET pos = -z;
+    `);
+    const add = db.prepare('INSERT INTO types (id, name, fade_focus, fade_zoom, pos) VALUES (?, ?, ?, ?, ?)');
+    add.run(newId(), 'background', 0, 0, 0);
+    add.run(newId(), 'object', 1, 1, 1);
+    add.run(newId(), 'character', 1, 0, 2);
+    db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('focus_opacity', '0.3')`).run();
+  },
+];
+
+const version = db.pragma('user_version', { simple: true });
+for (let v = version; v < migrations.length; v++) {
+  db.transaction(() => {
+    migrations[v]();
+    db.pragma(`user_version = ${v + 1}`);
+  })();
+  console.log(`Database migrated to version ${v + 1}`);
+}
+
+function getSetting(key, fallback) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+function setSetting(key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value));
+}
+
 // Anything still "processing" at startup was interrupted by a restart.
 db.prepare(`UPDATE images SET status = 'error', error = 'Interrupted by server restart; upload again'
             WHERE status = 'processing'`).run();
 
-const newId = () => crypto.randomBytes(8).toString('hex');
 
-module.exports = { db, newId };
+module.exports = { db, newId, getSetting, setSetting };

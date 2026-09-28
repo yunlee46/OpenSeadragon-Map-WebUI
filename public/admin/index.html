@@ -26,6 +26,7 @@
       <nav>
         <a href="#/maps" data-nav="maps">Maps</a>
         <a href="#/images" data-nav="images">Images</a>
+        <a href="#/settings" data-nav="settings">Types &amp; settings</a>
       </nav>
       <div class="spacer"></div>
       <a class="btn ghost" href="/" target="_blank">Open viewer ↗</a>
@@ -60,11 +61,35 @@
       <div id="images-list" class="grid"></div>
     </section>
 
+    <!-- Types & settings -->
+    <section id="settings-view" class="page" hidden>
+      <div class="page-head"><h2>Image types</h2></div>
+      <p class="hint">Types decide which images fade. <b>Focus</b>: fades while another image is focused. <b>Zoom-reveal</b>: fades as you zoom into it, revealing what's behind. Each image on a map can also be set to always or never fade.</p>
+      <table class="list">
+        <thead><tr><th>Name</th><th>Fades in focus</th><th>Fades in zoom-reveal</th><th>Images</th><th></th></tr></thead>
+        <tbody id="types-list"></tbody>
+      </table>
+      <form id="new-type-form" class="inline-form add-type">
+        <input name="name" placeholder="New type name" required maxlength="60">
+        <button class="btn primary">Add type</button>
+      </form>
+
+      <div class="page-head spaced"><h2>Focus mode</h2></div>
+      <label class="setting-row">
+        <span>Default visibility of the other images while an image is focused</span>
+        <span class="slider-group">
+          <input type="range" id="focus-default" min="0" max="1" step="0.05">
+          <output id="focus-default-out"></output>
+        </span>
+      </label>
+      <p class="hint">Viewers and the editor can adjust this with a slider. This is where it starts.</p>
+    </section>
+
     <!-- Map editor -->
     <section id="editor-view" class="editor" hidden>
       <aside class="toolbar" id="toolbar">
         <button data-tool="pan" title="Pan &amp; zoom (H)">✋<span>Pan</span></button>
-        <button data-tool="move" title="Move images (M)">✥<span>Move</span></button>
+        <button data-tool="move" title="Move images (M). Select a group first to move the whole group.">✥<span>Move</span></button>
         <button data-tool="select" title="Select &amp; edit shapes (S)">⬚<span>Select</span></button>
         <hr>
         <button data-tool="rect" title="Draw rectangle (R)">▭<span>Rect</span></button>
@@ -89,7 +114,7 @@
           <button id="save-btn" class="btn primary">Save</button>
         </div>
 
-        <details open class="section">
+        <details class="section">
           <summary>Map settings</summary>
           <label>Name <input id="map-name-input" maxlength="200"></label>
           <label class="row">Background <input type="color" id="map-bg-input"></label>
@@ -99,11 +124,30 @@
 
         <details open class="section">
           <summary>Images on this map</summary>
-          <div class="inline-form">
-            <select id="add-image-select"></select>
-            <button id="add-image-btn" class="btn small">Add</button>
+          <div class="icon-bar">
+            <button class="icon-btn" id="add-from-library" title="Add from image library"></button>
+            <button class="icon-btn" id="upload-to-map" title="Upload new images from your computer and place them here"></button>
+            <button class="icon-btn" id="new-group" title="New group"></button>
+            <input type="file" id="editor-file-input" multiple accept="image/*,.tif,.tiff,.zip" hidden>
           </div>
-          <ul id="layers-list" class="items"></ul>
+          <ul id="pending-uploads" class="pending"></ul>
+          <div id="outliner"></div>
+          <p class="hint small">Drag to reorder or move into groups. Higher in the list is drawn on top. Right-click for more.</p>
+        </details>
+
+        <details open class="section">
+          <summary>Preview</summary>
+          <label class="switch"><input type="checkbox" id="focus-toggle"> <span>Focus mode</span></label>
+          <label class="setting-row compact">
+            <span>Others' visibility</span>
+            <span class="slider-group">
+              <input type="range" id="focus-opacity" min="0" max="1" step="0.05">
+              <output id="focus-opacity-out"></output>
+            </span>
+          </label>
+          <button id="focus-default-btn" class="btn small ghost" title="Save this visibility as the default for everyone">Make this the default</button>
+          <label class="switch"><input type="checkbox" id="zoom-toggle"> <span>Zoom-reveal</span></label>
+          <p class="hint small">Double-click an image (or press F) to focus it. These switches only preview; visitors turn them on in the viewer.</p>
         </details>
 
         <details open class="section">
@@ -115,6 +159,16 @@
       </aside>
     </section>
   </div>
+
+  <!-- Library picker -->
+  <dialog id="library-dialog" class="dialog">
+    <div class="dialog-head">
+      <h3>Add from library</h3>
+      <input id="library-search" type="search" placeholder="Search…">
+      <button class="btn ghost small" id="library-close">Close</button>
+    </div>
+    <div id="library-grid" class="grid picker"></div>
+  </dialog>
 
   <script type="module" src="/admin/admin.js"></script>
 </body>
