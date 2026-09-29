@@ -528,6 +528,18 @@ function targetImageSelect(shape) {
   return select;
 }
 
+// Clicking a hitbox in the editor selects it; these follow it instead.
+function followLinks(shape) {
+  if ((shape.action || 'map') === 'url') {
+    return shape.url ? h('div', { class: 'btn-row' }, h('a', { class: 'btn small', href: shape.url, target: '_blank', rel: 'noopener noreferrer' }, 'Open link ↗')) : null;
+  }
+  if (!shape.target_map_id) return h('p', { class: 'error small' }, "Choose a map, or this hitbox won't be clickable.");
+  const q = shape.target_layer_id ? `&f=${shape.target_layer_id}` : '';
+  return h('div', { class: 'btn-row' },
+    h('a', { class: 'btn small', href: `#/edit/${shape.target_map_id}` }, 'Edit target map'),
+    h('a', { class: 'btn small ghost', href: `/?map=${shape.target_map_id}&preview=1${q}`, target: '_blank' }, 'Preview target ↗'));
+}
+
 function shapeProps(shape) {
   const isHit = shape.kind === 'hitbox';
   const action = shape.action || 'map';
@@ -576,6 +588,7 @@ function shapeProps(shape) {
     h('label', { class: 'row' }, 'Colour', h('input', {
       type: 'color', value: shape.color, oninput: (e) => updateShape(shape, { color: e.target.value }),
     })),
+    isHit ? followLinks(shape) : null,
     h('p', { class: 'hint small' }, 'With the Select tool: drag the shape to move it, drag its corner handles to reshape it.'),
     h('button', { class: 'btn small danger', onclick: () => removeShape(shape) }, 'Delete shape'),
   ];
@@ -1106,7 +1119,14 @@ function onRelease() {
 }
 
 function onClick(e) {
-  if (editor.tool !== 'polygon' || !e.quick) return;
+  if (!e.quick) return;
+  // In the editor a click never follows a hitbox; with the Pan tool it selects the hitbox or note instead.
+  if (editor.tool === 'pan') {
+    const hit = editor.overlay.hitTest(toPoint(e.position));
+    if (hit) select('shape', hit.id);
+    return;
+  }
+  if (editor.tool !== 'polygon') return;
   const pt = toPoint(e.position);
   if (!editor.draft) {
     editor.draft = { open: true, geometry: { type: 'polygon', points: [[pt.x, pt.y]] } };

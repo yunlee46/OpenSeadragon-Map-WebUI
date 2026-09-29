@@ -336,6 +336,13 @@ function hitLabel(hit) {
   return `Go to ${hit.target_name}`;
 }
 
+// In a draft preview, point out links visitors can't follow yet.
+const labelFor = (hit) => {
+  const label = hitLabel(hit);
+  if (current?.preview && hit.kind === 'hitbox' && hit.action !== 'url' && hit.target_published === false) return `${label} (not published yet)`;
+  return label;
+};
+
 // Topmost image that's actually visible under a viewport point.
 function layerAt(pt) {
   if (!current) return null;
@@ -382,7 +389,7 @@ viewer.container.addEventListener('pointermove', (e) => {
     overlay.render(current.shapes, { hoverId });
     fade.onApply();
   }
-  showTooltip(hit && hitLabel(hit), e.clientX, e.clientY);
+  showTooltip(hit && labelFor(hit), e.clientX, e.clientY);
 });
 viewer.container.addEventListener('pointerleave', () => { tooltip.hidden = true; });
 
@@ -396,7 +403,7 @@ viewer.container.addEventListener('pointerdown', (e) => {
   holdTimer = setTimeout(() => {
     const hit = overlay.hitTest(pt, clickable);
     if (!hit) return;
-    showTooltip(hitLabel(hit), clientX - 60, clientY - 70);
+    showTooltip(labelFor(hit), clientX - 60, clientY - 70);
     setTimeout(() => { tooltip.hidden = true; }, 2200);
   }, 500);
 });

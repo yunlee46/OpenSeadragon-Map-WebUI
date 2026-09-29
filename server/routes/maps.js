@@ -29,7 +29,7 @@ pub.get('/maps/:id', wrap((req, res) => {
   const map = getMap(req.params.id);
   // Admins can preview the draft exactly as visitors would see it after publishing.
   if (req.query.preview === '1' && auth.isAdmin(req)) {
-    return res.json({ ...content.mapPayload(map, content.draftContent(map), { forVisitors: true }), preview: true });
+    return res.json({ ...content.mapPayload(map, content.draftContent(map), { forVisitors: true, preview: true }), preview: true });
   }
   const snap = content.publishedContent(map);
   if (!snap) throw new HttpError(404, 'This map has not been published yet');

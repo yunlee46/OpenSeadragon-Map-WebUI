@@ -83,7 +83,8 @@ const appSettings = () => ({
 
 // Everything the viewer or editor needs to show a map.
 // forVisitors: hide hidden images/groups and their attached shapes, and only link to published maps.
-function mapPayload(map, content, { forVisitors }) {
+// preview: an admin previewing a draft, so hitboxes may also lead to maps that aren't published yet.
+function mapPayload(map, content, { forVisitors, preview = false }) {
   const fullTree = buildTree(content.groups, content.layers);
   const tree = forVisitors ? pruneHidden(fullTree) : fullTree;
   const allIds = treeIds(fullTree);
@@ -97,7 +98,7 @@ function mapPayload(map, content, { forVisitors }) {
     // Attached to something hidden: hide the shape too. (Attached to something deleted: keep it.)
     if (forVisitors && s.attach_id && allIds.has(s.attach_id) && !visibleIds.has(s.attach_id)) continue;
     let target = s.target_map_id ? maps.get(s.target_map_id) : null;
-    if (target && forVisitors && !target.published_at) target = null;
+    if (target && forVisitors && !preview && !target.published_at) target = null;
     const img = s.image_id ? imageById.get(s.image_id) : null;
     shapes.push({
       id: s.id,
@@ -107,6 +108,7 @@ function mapPayload(map, content, { forVisitors }) {
       url: s.url || null,
       target_map_id: target ? s.target_map_id : null,
       target_name: target ? target.name : null,
+      target_published: target ? !!target.published_at : null,
       target_layer_id: target ? s.target_layer_id || null : null,
       title: s.title,
       body: s.body,
