@@ -1,4 +1,5 @@
 import { api } from '/js/overlay.js';
+import { icon } from '/js/icons.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -15,6 +16,15 @@ export const h = (tag, props = {}, ...children) => {
   n.append(...children.flat().filter((c) => c != null && c !== false));
   return n;
 };
+
+// An icon-only button with a hover tooltip. variant: '' | 'small' | 'danger' | 'primary' … (space separated)
+export const iconBtn = (name, tip, props = {}, variant = '') => h(props.href ? 'a' : 'button', {
+  ...props,
+  class: `icon-btn ${variant} ${props.class || ''}`.trim(),
+  'data-tip': tip,
+  'aria-label': tip,
+  html: icon(name),
+});
 
 export const newId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
 

@@ -2,7 +2,7 @@
 
 A self-hosted [OpenSeadragon](https://openseadragon.github.io/) deep-zoom viewer with an admin panel.
 
-- **Maps are canvases.** Place one or more images on a map, drag them into position and resize them.
+- **Maps are canvases.** Place one or more images on a map, drag them into position and resize them. Organise maps into nested folders; the viewer's map menu follows the same folders.
 - **Image library.** Upload normal images (JPG, PNG, TIFF, WebP…) and the server tiles them into Deep Zoom (DZI) with libvips. Or upload a `.zip` of an image you've already tiled (`name.dzi` + `name_files/`). **Replace file** swaps in a new version and keeps every placement, type and hitbox that uses it.
 - **Hitboxes.** Rectangles or polygons that open another map (optionally focusing a specific image there) or a web page. Breadcrumbs, the Back button and browser history work.
 - **Notes (annotations).** Rectangles or polygons that show a title, a picture and formatted text (bold, italics, links, lists) when clicked.
@@ -100,7 +100,7 @@ If you run the app without Docker, start it again by hand after a restore.
 1. **Images → upload.** Tiling runs in the background, one image at a time. Very large images can take a few minutes. Give each image a **type** from the dropdown on its card. Search and filter by name, type, status, or "not on any map".
 2. **Planner.** List the images you still need to make. Open an item to add notes, reference images, a planned map and group, and a type. **⤒ Add image** uploads the finished image straight into the library with the item's name and type, and marks the item done. **Link existing** uses an image that's already in the library.
 3. **Types & settings.** Create, rename and delete types, choose whether each type fades in focus mode, in zoom-reveal and when small, set the default focus fade amount and the "small" threshold, and back up or restore everything.
-4. **Maps → Create map.** This opens the editor.
+4. **Maps.** Type a name and press the create button to make a map (it goes into the selected folder). Use the folder button for new folders, drag maps and folders to organise them, and right-click for more. Deleting a folder keeps its maps (they move up a level) unless you choose "Delete folder and its maps".
 5. In the editor's **Images on this map** section:
    - The three icon buttons are **add from library** (images planned for this map are listed first), **upload** (new files are uploaded, tiled and placed automatically) and **new group**.
    - Drag rows to reorder them or move them into groups. Higher in the list is drawn on top. The eye icon hides an image or group, which also hides it in the public viewer.
@@ -114,7 +114,9 @@ If you run the app without Docker, start it again by hand after a restore.
 9. **Publish** makes the saved draft visible to visitors. **Preview** shows the draft exactly as visitors will see it. **Discard draft** goes back to the published version.
 10. Mark one map as the **default**. It's the one the viewer opens first.
 
-In the viewer, **☰ Images** opens a panel listing the map's images with thumbnails. Click an image to fly to it, and turn on focus mode, zoom-reveal or fade small images from the panel. **⌕** searches every published map, and **🔗** copies a link to the current view.
+Buttons are icons; hover over one to see what it does.
+
+In the viewer, the **layers** button opens a panel listing the map's images with thumbnails. Click an image to fly to it, and turn on focus mode, zoom-reveal or fade small images from the panel. The **search** button searches every published map, and the **link** button copies a link to the current view.
 
 Deleting an image removes it from every map that uses it, deletes its tiles, and puts its planner item back to "in progress". Deleting a map leaves hitboxes that pointed to it unlinked. Deleting a type leaves its images with no type.
 

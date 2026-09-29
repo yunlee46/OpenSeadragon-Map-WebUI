@@ -3,6 +3,7 @@ const { db, newId } = require('../db');
 const auth = require('../auth');
 const { flattenTree, saveTree } = require('../maptree');
 const content = require('../content');
+const { buildMapTree, orderedMaps, saveMapTree, folderExists } = require('../maplist');
 const { ID_RE, COLOR_RE, URL_RE, str, HttpError, wrap, validGeometry, validView } = require('../util');
 
 const pub = express.Router();
@@ -19,8 +20,9 @@ const touchDraft = (id) => db.prepare('UPDATE maps SET draft_at = ? WHERE id = ?
 // ---------- public ----------
 
 pub.get('/maps', (req, res) => {
-  const maps = db.prepare('SELECT id, name, is_default FROM maps WHERE published_at IS NOT NULL ORDER BY name COLLATE NOCASE').all()
-    .map((m) => ({ ...m, is_default: !!m.is_default }));
+  // In list order, with the folders each map sits in (folders only matter for grouping the menu).
+  const maps = orderedMaps().filter((m) => m.published_at)
+    .map((m) => ({ id: m.id, name: m.name, is_default: m.is_default, path: m.path }));
   if (maps.length && !maps.some((m) => m.is_default)) maps[0].is_default = true;
   res.json(maps);
 });
@@ -89,21 +91,24 @@ pub.get('/search', (req, res) => {
 
 // ---------- admin ----------
 
-admin.get('/maps', (req, res) => {
-  res.json(db.prepare(`
-    SELECT id, name, is_default, published_at, draft_at,
-      (SELECT COUNT(*) FROM layers l WHERE l.map_id = m.id) AS layer_count,
-      (SELECT COUNT(*) FROM shapes s WHERE s.map_id = m.id) AS shape_count
-    FROM maps m ORDER BY name COLLATE NOCASE`).all()
-    .map((m) => ({ ...m, is_default: !!m.is_default, unpublished: content.hasUnpublished(m) })));
-});
+admin.get('/maps', (req, res) => res.json(orderedMaps()));
+
+admin.get('/map-tree', (req, res) => res.json(buildMapTree()));
+
+admin.put('/map-tree', wrap((req, res) => {
+  saveMapTree(req.body.tree);
+  res.json(buildMapTree());
+}));
 
 admin.post('/maps', wrap((req, res) => {
   const name = str(req.body.name, 200).trim();
   if (!name) throw new HttpError(400, 'Name is required');
   const id = newId();
   const first = db.prepare('SELECT COUNT(*) AS n FROM maps').get().n === 0;
-  db.prepare('INSERT INTO maps (id, name, is_default, created_at, draft_at) VALUES (?, ?, ?, ?, ?)').run(id, name, first ? 1 : 0, Date.now(), Date.now());
+  const folder = folderExists(req.body.folder_id) ? req.body.folder_id : null;
+  const pos = (db.prepare('SELECT MAX(pos) AS p FROM maps WHERE folder_id IS ?').get(folder).p ?? -1) + 1;
+  db.prepare('INSERT INTO maps (id, name, is_default, created_at, draft_at, folder_id, pos) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, first ? 1 : 0, Date.now(), Date.now(), folder, pos);
   res.status(201).json({ id });
 }));
 

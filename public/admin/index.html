@@ -30,8 +30,8 @@
         <a href="#/settings" data-nav="settings">Types &amp; settings</a>
       </nav>
       <div class="spacer"></div>
-      <a class="btn ghost" href="/" target="_blank">Open viewer ↗</a>
-      <button class="btn ghost" id="logout">Log out</button>
+      <a class="icon-btn ghost" href="/" target="_blank" data-icon="external" data-tip="Open the public viewer"></a>
+      <button class="icon-btn ghost" id="logout" data-icon="logout" data-tip="Log out"></button>
     </header>
 
     <!-- Maps list -->
@@ -40,14 +40,12 @@
         <h2>Maps</h2>
         <form id="new-map-form" class="inline-form">
           <input name="name" placeholder="New map name" required maxlength="200">
-          <button class="btn primary">Create map</button>
+          <button class="icon-btn primary" data-icon="mapPlus" data-tip="Create map"></button>
+          <button type="button" class="icon-btn" id="new-folder" data-icon="folderPlus" data-tip="New folder"></button>
         </form>
       </div>
-      <p class="hint">Each map is a canvas. Place one or more images on it, then draw hitboxes that link to other maps and annotations with notes. The <b>default</b> map opens first in the viewer.</p>
-      <table class="list">
-        <thead><tr><th>Name</th><th>Images</th><th></th></tr></thead>
-        <tbody id="maps-list"></tbody>
-      </table>
+      <p class="hint">Each map is a canvas. Place one or more images on it, then draw hitboxes that link to other maps and annotations with notes. The <b>★ default</b> map opens first in the viewer. Drag maps into folders to organise them; right-click for more.</p>
+      <div id="maps-tree" class="card maps-tree"></div>
     </section>
 
     <!-- Image library -->
@@ -85,7 +83,7 @@
       </table>
       <form id="new-type-form" class="inline-form add-type">
         <input name="name" placeholder="New type name" required maxlength="60">
-        <button class="btn primary">Add type</button>
+        <button class="icon-btn primary" data-icon="plus" data-tip="Add type"></button>
       </form>
 
       <div class="page-head spaced"><h2>Focus mode</h2></div>
@@ -110,8 +108,8 @@
       <div class="page-head spaced"><h2>Backup &amp; restore</h2></div>
       <p class="hint">A backup is one zip with everything: maps, drafts, images and their tiles, the planner and its reference images. It can be large.</p>
       <div class="btn-row">
-        <a class="btn primary" href="/api/admin/backup" download>Download backup</a>
-        <button class="btn danger" id="restore-btn">Restore from backup…</button>
+        <a class="icon-btn primary" href="/api/admin/backup" download data-icon="download" data-tip="Download a backup of everything"></a>
+        <button class="icon-btn danger" id="restore-btn" data-icon="restore" data-tip="Restore from a backup…"></button>
         <input type="file" id="restore-input" accept=".zip" hidden>
       </div>
       <div id="restore-progress" class="progress" hidden><div></div><span></span></div>
@@ -124,10 +122,10 @@
         <h2>Planner</h2>
         <form id="new-plan-form" class="inline-form">
           <input name="title" placeholder="What image do you still need?" required maxlength="200">
-          <button class="btn primary">Add</button>
+          <button class="icon-btn primary" data-icon="plus" data-tip="Add to the planner"></button>
         </form>
       </div>
-      <p class="hint">A to-do list of images to make. Use <b>⤒ Add image</b> on an item to upload it: it goes into the library with the item's name and type, and the item is marked done. Items planned for a map show up first when you add images in that map's editor.</p>
+      <p class="hint">A to-do list of images to make. Use the <b>upload</b> button on an item to upload it: it goes into the library with the item's name and type, and the item is marked done. Items planned for a map show up first when you add images in that map's editor.</p>
       <div class="filter-bar">
         <input id="plan-search" type="search" placeholder="Search…">
         <select id="plan-status">
@@ -154,18 +152,18 @@
     <!-- Map editor -->
     <section id="editor-view" class="editor" hidden>
       <aside class="toolbar" id="toolbar">
-        <button data-tool="pan" title="Pan &amp; zoom (H)">✋<span>Pan</span></button>
-        <button data-tool="move" title="Move images (M). Select a group first to move the whole group.">✥<span>Move</span></button>
-        <button data-tool="select" title="Select &amp; edit shapes (S)">⬚<span>Select</span></button>
+        <button data-tool="pan" data-tip="Pan &amp; zoom (H)">✋<span>Pan</span></button>
+        <button data-tool="move" data-tip="Move images (M). Select a group first to move the whole group.">✥<span>Move</span></button>
+        <button data-tool="select" data-tip="Select &amp; edit shapes (S)">⬚<span>Select</span></button>
         <hr>
-        <button data-tool="rect" title="Draw rectangle (R)">▭<span>Rect</span></button>
-        <button data-tool="polygon" title="Draw polygon (P) — click points, click the first point or press Enter to finish">⬠<span>Polygon</span></button>
-        <div class="draw-kind" title="What new shapes become">
+        <button data-tool="rect" data-tip="Draw rectangle (R)">▭<span>Rect</span></button>
+        <button data-tool="polygon" data-tip="Draw polygon (P) — click points, click the first point or press Enter to finish">⬠<span>Polygon</span></button>
+        <div class="draw-kind" data-tip="What new shapes become">
           <label><input type="radio" name="draw-kind" value="hitbox" checked> Hitbox</label>
           <label><input type="radio" name="draw-kind" value="annotation"> Note</label>
         </div>
         <hr>
-        <button id="home-btn" title="Fit everything in view">⌂<span>Fit</span></button>
+        <button id="home-btn" data-tip="Fit everything in view">⌂<span>Fit</span></button>
       </aside>
 
       <div class="editor-main">
@@ -176,19 +174,18 @@
       <aside class="panel">
         <div class="panel-head">
           <div class="panel-row">
-            <a href="#/maps" class="btn ghost small">&larr; Maps</a>
-            <button id="undo-btn" class="btn ghost small icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
-            <button id="redo-btn" class="btn ghost small icon-only" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+            <a href="#/maps" class="icon-btn ghost" data-icon="back" data-tip="Back to the maps list"></a>
+            <button id="undo-btn" class="icon-btn ghost" data-icon="undo" data-tip="Undo (Ctrl+Z)"></button>
+            <button id="redo-btn" class="icon-btn ghost" data-icon="redo" data-tip="Redo (Ctrl+Y)"></button>
             <span id="dirty" class="dirty" hidden>Unsaved</span>
-            <button id="save-btn" class="btn primary" title="Save the draft (Ctrl+S)">Save</button>
+            <span class="spacer"></span>
+            <button id="discard-btn" class="icon-btn danger" data-icon="reset" data-tip="Discard the draft and go back to the published version" hidden></button>
+            <button id="preview-btn" class="icon-btn ghost" data-icon="eye" data-tip="Preview the draft as visitors will see it"></button>
+            <button id="publish-btn" class="icon-btn primary-outline" data-icon="publish" data-tip="Publish: make the saved draft visible to visitors"></button>
+            <button id="save-btn" class="icon-btn primary" data-icon="save" data-tip="Save the draft (Ctrl+S)"></button>
           </div>
           <div class="panel-row publish-row">
             <span id="publish-state" class="publish-state"></span>
-          </div>
-          <div class="panel-row">
-            <button id="publish-btn" class="btn small primary-outline" title="Make the saved draft visible to visitors">Publish</button>
-            <button id="preview-btn" class="btn small ghost" title="See the draft as visitors will">Preview ↗</button>
-            <button id="discard-btn" class="btn small danger" title="Go back to the published version" hidden>Discard draft</button>
           </div>
         </div>
 
@@ -200,9 +197,9 @@
           <div class="subsection">
             <div class="small"><b>Starting view:</b> <span id="home-view-state"></span></div>
             <div class="btn-row">
-              <button id="home-view-set" class="btn small" title="Visitors (and the home button) start at what you see now">Use current view</button>
-              <button id="home-view-go" class="btn small ghost">Go there</button>
-              <button id="home-view-clear" class="btn small ghost">Reset</button>
+              <button id="home-view-set" class="icon-btn small" data-icon="crosshair" data-tip="Use the current view as the starting view"></button>
+              <button id="home-view-go" class="icon-btn small ghost" data-icon="goTo" data-tip="Go to the starting view"></button>
+              <button id="home-view-clear" class="icon-btn small ghost" data-icon="reset" data-tip="Reset: start by fitting everything"></button>
             </div>
           </div>
           <a id="view-map-link" class="small" target="_blank">View published map ↗</a>
@@ -211,9 +208,9 @@
         <details open class="section">
           <summary>Images on this map</summary>
           <div class="icon-bar">
-            <button class="icon-btn" id="add-from-library" title="Add from image library"></button>
-            <button class="icon-btn" id="upload-to-map" title="Upload new images from your computer and place them here"></button>
-            <button class="icon-btn" id="new-group" title="New group"></button>
+            <button class="icon-btn" id="add-from-library" data-icon="library" data-tip="Add from the image library"></button>
+            <button class="icon-btn" id="upload-to-map" data-icon="upload" data-tip="Upload new images and place them here"></button>
+            <button class="icon-btn" id="new-group" data-icon="newGroup" data-tip="New group"></button>
             <input type="file" id="editor-file-input" multiple accept="image/*,.tif,.tiff,.zip" hidden>
           </div>
           <ul id="pending-uploads" class="pending"></ul>
@@ -229,12 +226,12 @@
             <span class="slider-group">
               <input type="range" id="focus-opacity" min="0" max="1" step="0.05">
               <output id="focus-opacity-out"></output>
+              <button id="focus-default-btn" type="button" class="icon-btn small ghost" data-icon="pin" data-tip="Make this visibility the default for everyone"></button>
             </span>
           </label>
-          <button id="focus-default-btn" class="btn small ghost" title="Save this visibility as the default for everyone">Make this the default</button>
           <label class="switch"><input type="checkbox" id="zoom-toggle"> <span>Zoom-reveal</span></label>
-          <label class="switch" title="Small images fade away when zoomed out"><input type="checkbox" id="small-toggle"> <span>Fade small images</span></label>
-          <p class="hint small">Double-click an image (or press F) to focus it. These switches only preview; visitors turn them on in the viewer. Hitboxes don't navigate in the editor (clicking one selects it); use <b>Preview ↗</b> to click through them.</p>
+          <label class="switch" data-tip="Small images fade away when zoomed out"><input type="checkbox" id="small-toggle"> <span>Fade small images</span></label>
+          <p class="hint small">Double-click an image (or press F) to focus it. These switches only preview; visitors turn them on in the viewer. Hitboxes don't navigate in the editor (clicking one selects it); use <b>Preview</b> (the eye at the top) to click through them.</p>
         </details>
 
         <details open class="section">
@@ -252,7 +249,7 @@
     <div class="dialog-head">
       <h3>Add from library</h3>
       <input id="library-search" type="search" placeholder="Search…">
-      <button class="btn ghost small" id="library-close">Close</button>
+      <button class="icon-btn ghost" id="library-close" data-icon="x" data-tip="Close"></button>
     </div>
     <div id="library-grid" class="grid picker"></div>
   </dialog>
@@ -262,7 +259,7 @@
     <div class="dialog-head">
       <h3>Link a library image</h3>
       <input id="link-search" type="search" placeholder="Search…">
-      <button class="btn ghost small" id="link-close">Close</button>
+      <button class="icon-btn ghost" id="link-close" data-icon="x" data-tip="Close"></button>
     </div>
     <div id="link-grid" class="grid picker"></div>
   </dialog>
@@ -271,7 +268,7 @@
   <dialog id="ref-dialog" class="dialog ref-dialog">
     <div class="dialog-head">
       <h3 id="ref-title"></h3>
-      <button class="btn ghost small" id="ref-close">Close</button>
+      <button class="icon-btn ghost" id="ref-close" data-icon="x" data-tip="Close"></button>
     </div>
     <img id="ref-full" alt="">
   </dialog>

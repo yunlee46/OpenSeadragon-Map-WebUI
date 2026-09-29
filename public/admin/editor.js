@@ -3,10 +3,10 @@ import {
 } from '/js/overlay.js';
 import * as T from '/js/tree.js';
 import { FadeController } from '/js/fade.js';
-import { renderOutliner, ICONS } from '/js/outliner.js';
+import { renderOutliner } from '/js/outliner.js';
 import { showMenu } from '/js/contextmenu.js';
 import { renderMarkdown } from '/js/markdown.js';
-import { $, h, newId, adminApi, uploadFiles, typeLabel } from './common.js';
+import { $, h, iconBtn, newId, adminApi, uploadFiles, typeLabel } from './common.js';
 
 const Pt = (x, y) => new OpenSeadragon.Point(x, y);
 
@@ -79,9 +79,6 @@ function initViewer() {
   viewer.container.addEventListener('pointermove', onHover);
   viewer.container.addEventListener('contextmenu', onCanvasContextMenu);
 
-  for (const btn of ['add-from-library', 'upload-to-map', 'new-group']) {
-    $(`#${btn}`).innerHTML = { 'add-from-library': ICONS.library, 'upload-to-map': ICONS.upload, 'new-group': ICONS.newGroup }[btn];
-  }
 }
 
 export async function openEditor(id) {
@@ -388,10 +385,9 @@ function renderPending() {
     h('span', { class: 'state' },
       p.status === 'uploading' ? `Uploading ${Math.round(p.progress * 100)}%`
         : p.status === 'tiling' ? 'Tiling…' : `Failed: ${p.error}`),
-    p.status === 'error' ? h('button', {
-      class: 'btn small ghost', title: 'Dismiss',
+    p.status === 'error' ? iconBtn('x', 'Dismiss', {
       onclick: () => { editor.pending.splice(editor.pending.indexOf(p), 1); renderPending(); },
-    }, '✕') : null,
+    }, 'small ghost') : null,
   )));
 }
 
@@ -458,13 +454,13 @@ function layerProps(layer) {
     h('div', { class: 'subsection' },
       h('div', { class: 'small' }, h('b', {}, 'Zoom-reveal: '), zoomText),
       h('div', { class: 'btn-row' },
-        h('button', { class: 'btn small', onclick: () => setZoomFade(layer, editor.viewer.viewport.getZoom()) }, 'Use current zoom'),
-        layer.zoom_fade ? h('button', { class: 'btn small ghost', onclick: () => setZoomFade(layer, null) }, 'Automatic') : null,
+        iconBtn('crosshair', 'Start fading at the current zoom', { onclick: () => setZoomFade(layer, editor.viewer.viewport.getZoom()) }, 'small'),
+        layer.zoom_fade ? iconBtn('reset', 'Back to automatic', { onclick: () => setZoomFade(layer, null) }, 'small ghost') : null,
       )),
     num('x', 'X', 0.01), num('y', 'Y', 0.01), num('width', 'Width', 0.01),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn small', onclick: () => updateLayer(layer, { width: layer.width * 0.8 }, true) }, '− Smaller'),
-      h('button', { class: 'btn small', onclick: () => updateLayer(layer, { width: layer.width * 1.25 }, true) }, '+ Bigger'),
+      iconBtn('zoomOut', 'Make smaller', { onclick: () => updateLayer(layer, { width: layer.width * 0.8 }, true) }, 'small'),
+      iconBtn('zoomIn', 'Make bigger', { onclick: () => updateLayer(layer, { width: layer.width * 1.25 }, true) }, 'small'),
     ),
     h('label', { class: 'row' }, 'Opacity', h('input', {
       type: 'range', min: 0, max: 1, step: 0.05, value: layer.opacity,
@@ -472,8 +468,8 @@ function layerProps(layer) {
     })),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !layer.hidden, onchange: () => toggleHidden(layer) }), 'Visible'),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn small', onclick: () => focusNode(layer) }, 'Focus'),
-      h('button', { class: 'btn small danger', onclick: () => removeNode(layer) }, 'Remove from map'),
+      iconBtn('focus', 'Focus on this image (F)', { onclick: () => focusNode(layer) }, 'small'),
+      iconBtn('trash', 'Remove from this map', { onclick: () => removeNode(layer) }, 'small danger'),
     ),
   ];
 }
@@ -489,12 +485,14 @@ function groupProps(g) {
     h('p', { class: 'muted small' }, `${count} image${count === 1 ? '' : 's'} inside. With the Move tool, drag any of them to move the whole group.`),
     h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !g.hidden, onchange: () => toggleHidden(g) }), 'Visible'),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn small', onclick: () => focusNode(g) }, 'Focus'),
-      h('button', { class: 'btn small', onclick: () => ungroup(g) }, 'Ungroup'),
-      h('button', { class: 'btn small danger', onclick: () => removeNode(g) }, 'Delete group'),
+      iconBtn('focus', 'Focus on this group (F)', { onclick: () => focusNode(g) }, 'small'),
+      iconBtn('ungroup', 'Ungroup (keep the images)', { onclick: () => ungroup(g) }, 'small'),
+      iconBtn('trash', 'Delete the group and its images from this map', { onclick: () => removeNode(g) }, 'small danger'),
     ),
   ];
 }
+
+const mapLabel = (m) => [...(m.path || []), m.name].join(' › ');
 
 // Options for "moves with": every image and group on the map, indented by depth.
 function attachOptions(selectedId) {
@@ -531,13 +529,13 @@ function targetImageSelect(shape) {
 // Clicking a hitbox in the editor selects it; these follow it instead.
 function followLinks(shape) {
   if ((shape.action || 'map') === 'url') {
-    return shape.url ? h('div', { class: 'btn-row' }, h('a', { class: 'btn small', href: shape.url, target: '_blank', rel: 'noopener noreferrer' }, 'Open link ↗')) : null;
+    return shape.url ? h('div', { class: 'btn-row' }, iconBtn('external', 'Open the link', { href: shape.url, target: '_blank', rel: 'noopener noreferrer' }, 'small')) : null;
   }
   if (!shape.target_map_id) return h('p', { class: 'error small' }, "Choose a map, or this hitbox won't be clickable.");
   const q = shape.target_layer_id ? `&f=${shape.target_layer_id}` : '';
   return h('div', { class: 'btn-row' },
-    h('a', { class: 'btn small', href: `#/edit/${shape.target_map_id}` }, 'Edit target map'),
-    h('a', { class: 'btn small ghost', href: `/?map=${shape.target_map_id}&preview=1${q}`, target: '_blank' }, 'Preview target ↗'));
+    iconBtn('edit', 'Edit the target map', { href: `#/edit/${shape.target_map_id}` }, 'small'),
+    iconBtn('eye', 'Preview the target map', { href: `/?map=${shape.target_map_id}&preview=1${q}`, target: '_blank' }, 'small ghost'));
 }
 
 function shapeProps(shape) {
@@ -560,7 +558,7 @@ function shapeProps(shape) {
     isHit && action === 'map' ? h('label', {}, 'Goes to map', h('select', {
       onchange: (e) => { updateShape(shape, { target_map_id: e.target.value || null, target_layer_id: null }); renderProps(); },
     }, h('option', { value: '' }, '— choose a map —'),
-    ...editor.maps.filter((m) => m.id !== editor.map.id).map((m) => h('option', { value: m.id, selected: m.id === shape.target_map_id }, m.name)))) : null,
+    ...editor.maps.filter((m) => m.id !== editor.map.id).map((m) => h('option', { value: m.id, selected: m.id === shape.target_map_id }, mapLabel(m))))) : null,
     isHit && action === 'map' && shape.target_map_id ? h('label', {}, 'On arrival, focus', targetImageSelect(shape)) : null,
     isHit && action === 'url' ? h('label', {}, 'Web address', h('input', {
       type: 'url', value: shape.url || '', placeholder: 'https://…', maxLength: 2000,
@@ -590,7 +588,7 @@ function shapeProps(shape) {
     })),
     isHit ? followLinks(shape) : null,
     h('p', { class: 'hint small' }, 'With the Select tool: drag the shape to move it, drag its corner handles to reshape it.'),
-    h('button', { class: 'btn small danger', onclick: () => removeShape(shape) }, 'Delete shape'),
+    h('div', { class: 'btn-row' }, iconBtn('trash', 'Delete this shape', { onclick: () => removeShape(shape) }, 'small danger')),
   ];
 }
 
@@ -1263,8 +1261,7 @@ $('#focus-opacity').addEventListener('input', (e) => {
 $('#focus-default-btn').addEventListener('click', async () => {
   const v = parseFloat($('#focus-opacity').value);
   await adminApi('/api/admin/settings', { method: 'PATCH', body: { focus_opacity: v } });
-  $('#focus-default-btn').textContent = `Default set to ${Math.round(v * 100)}% ✓`;
-  setTimeout(() => { $('#focus-default-btn').textContent = 'Make this the default'; }, 1800);
+  flash($('#focus-default-btn'), `Default set to ${Math.round(v * 100)}%`);
 });
 $('#zoom-toggle').addEventListener('change', (e) => editor.fade.setZoomReveal(e.target.checked));
 $('#small-toggle').addEventListener('change', (e) => editor.fade.setFadeSmall(e.target.checked));
@@ -1280,13 +1277,21 @@ function serializeTree(list) {
 
 const SHAPE_FIELDS = ['id', 'kind', 'geometry', 'target_map_id', 'target_layer_id', 'action', 'url', 'title', 'body', 'color', 'attach_id', 'image_id'];
 
+// Briefly mark an icon button as done, with a short message as its tooltip.
+function flash(btn, msg) {
+  const tip = btn.dataset.tip;
+  btn.classList.add('done');
+  btn.dataset.tip = `${msg} ✓`;
+  setTimeout(() => { btn.classList.remove('done'); btn.dataset.tip = tip; }, 1600);
+}
+
 // Save the draft. Resolves true on success.
 export async function save({ quiet = false } = {}) {
   if (!editor.map) return false;
   const unlinked = editor.shapes.filter((s) => s.kind === 'hitbox' && ((s.action || 'map') === 'map' ? !s.target_map_id : !s.url)).length;
   const btn = $('#save-btn');
   btn.disabled = true;
-  btn.textContent = 'Saving…';
+  btn.classList.add('busy');
   try {
     const name = $('#map-name-input').value.trim() || editor.map.name;
     const settings = { name, background: $('#map-bg-input').value, home_view: editor.homeView };
@@ -1305,16 +1310,15 @@ export async function save({ quiet = false } = {}) {
     editor.unpublished = true;
     setDirty(false);
     renderPublishState();
-    btn.textContent = 'Saved ✓';
+    flash(btn, 'Saved');
     if (unlinked && !quiet) setTimeout(() => alert(`Saved. Note: ${unlinked} hitbox(es) have no target yet and won't be clickable in the viewer.`), 50);
   } catch (err) {
-    btn.textContent = 'Save';
     alert(`Save failed: ${err.message}`);
     return false;
   } finally {
     btn.disabled = false;
+    btn.classList.remove('busy');
   }
-  setTimeout(() => { btn.textContent = 'Save'; }, 1500);
   return true;
 }
 
@@ -1327,8 +1331,7 @@ async function publish() {
     editor.map.published_at = Date.now();
     editor.unpublished = false;
     renderPublishState();
-    btn.textContent = 'Published ✓';
-    setTimeout(() => { btn.textContent = 'Publish'; }, 1600);
+    flash(btn, 'Published');
   } catch (err) {
     alert(`Publish failed: ${err.message}`);
   } finally {

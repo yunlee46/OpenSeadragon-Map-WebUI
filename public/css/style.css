@@ -456,3 +456,60 @@ select.pill { width: auto; padding: 3px 8px; border-radius: 14px; font-size: 12.
   .viewer-page .navigator { display: none !important; }
   .tooltip { font-size: 14px; }
 }
+
+/* ---------- icon buttons & tooltips ---------- */
+.icon { width: 18px; height: 18px; display: block; flex: none; }
+.icon-btn { flex: none; text-decoration: none; position: relative; }
+.icon-btn .icon { width: 18px; height: 18px; }
+.icon-btn.small { width: 28px; height: 26px; border-radius: 5px; }
+.icon-btn.small .icon { width: 16px; height: 16px; }
+.icon-btn.ghost { background: transparent; border-color: transparent; }
+.icon-btn.ghost:hover { background: var(--bg3); border-color: var(--line); }
+.icon-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.icon-btn.primary:hover { filter: brightness(1.1); color: #fff; }
+.icon-btn.primary-outline { background: transparent; border-color: var(--accent); color: #9fcbff; }
+.icon-btn.primary-outline:hover { background: rgba(77, 163, 255, .14); }
+.icon-btn.danger { background: transparent; border-color: transparent; color: #ff8a8a; }
+.icon-btn.danger:hover { border-color: var(--danger); background: rgba(255, 93, 93, .08); color: #ff9d9d; }
+.icon-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+.icon-btn.on { color: #ffd24d; }
+.icon-btn.on .icon { fill: currentColor; }
+.icon-btn.busy { opacity: .6; }
+.icon-btn.done { background: #1f5a36 !important; border-color: #2f8a53 !important; color: #fff !important; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ui-tip {
+  position: fixed; z-index: 300; pointer-events: none; max-width: 280px;
+  background: #0d0f13; color: #eef1f5; border: 1px solid #353a44; border-radius: 6px;
+  padding: 4px 9px; font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}
+.ui-tip[hidden] { display: none; }
+
+/* A checkbox shown as an icon button (e.g. show hitboxes). */
+.icon-toggle {
+  flex-direction: row; display: inline-grid; place-items: center; width: 34px; height: 30px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; position: relative;
+}
+.icon-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.icon-toggle:has(input:checked) { color: #cfe5ff; background: #1f3a57; border-color: var(--accent); }
+.icon-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.panel-row .spacer { flex: 1; }
+.panel-head .panel-row { gap: 4px; }
+.popup .close.icon-btn { position: absolute; top: 6px; right: 6px; font-size: 0; }
+.dialog-head .icon-btn { margin-left: auto; }
+
+/* ---------- maps tree ---------- */
+.maps-tree { padding: 6px; margin-top: 8px; }
+.maps-tree .ol-row { height: 36px; }
+.maps-tree .ol-name { font-weight: 600; }
+.maps-tree .ol-row.group .ol-name { font-weight: 500; }
+.ol-icon.svg { color: #7fb4ff; }
+.ol-icon.svg .icon { width: 17px; height: 17px; }
+.ol-badge.warn { background: #3d3212; color: #ffd98a; }
+.ol-badge.muted-badge { background: transparent; }
+.row-actions { display: flex; align-items: center; gap: 2px; margin-left: 4px; opacity: .55; transition: opacity .12s; }
+.ol-row:hover .row-actions, .ol-row.selected .row-actions, .row-actions:focus-within { opacity: 1; }
+@media (hover: none) { .row-actions { opacity: 1; } }
+@media (max-width: 700px) { .ol-badge.muted-badge { display: none; } }
+.icon-slot { width: 28px; height: 26px; flex: none; }

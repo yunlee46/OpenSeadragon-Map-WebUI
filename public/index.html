@@ -9,19 +9,19 @@
 </head>
 <body class="viewer-page">
   <header class="topbar">
-    <button id="back" class="btn icon-only" title="Back" aria-label="Back" hidden>&larr;</button>
+    <button id="back" class="icon-btn ghost" data-icon="back" data-tip="Back" hidden></button>
     <nav id="crumbs" class="crumbs" aria-label="Where you are"></nav>
     <div class="spacer"></div>
     <div class="search" id="search-box">
-      <button class="btn icon-only" id="search-open" title="Search" aria-label="Search">⌕</button>
+      <button class="icon-btn ghost" id="search-open" data-icon="search" data-tip="Search"></button>
       <input id="search" type="search" placeholder="Search maps, images, notes…" autocomplete="off" aria-label="Search">
       <ul id="search-results" class="search-results" hidden></ul>
     </div>
-    <label class="toggle" title="Show hitboxes and notes"><input type="checkbox" id="show-shapes" checked> <span>Hitboxes &amp; notes</span></label>
+    <label class="icon-toggle" data-icon="pointer" data-tip="Show hitboxes and notes"><input type="checkbox" id="show-shapes" checked></label>
     <select id="map-select" aria-label="Choose a map"></select>
-    <button id="share-btn" class="btn icon-only" title="Copy a link to this view" aria-label="Copy a link to this view">🔗</button>
-    <button id="panel-btn" class="btn" title="Images on this map" aria-expanded="false">☰ <span>Images</span></button>
-    <a class="btn ghost admin-link" href="/admin/">Admin</a>
+    <button id="share-btn" class="icon-btn ghost" data-icon="share" data-tip="Copy a link to this view"></button>
+    <button id="panel-btn" class="icon-btn" data-icon="layers" data-tip="Images on this map" aria-expanded="false"></button>
+    <a class="icon-btn ghost admin-link" href="/admin/" data-icon="key" data-tip="Admin"></a>
   </header>
   <div id="preview-banner" class="preview-banner" hidden>Draft preview: this is what visitors will see after you publish. <a id="preview-edit" href="/admin/">Back to editor</a></div>
   <div class="viewer-body">
@@ -29,7 +29,7 @@
     <aside id="side-panel" class="side-panel" hidden>
       <div class="side-head">
         <strong>Images</strong>
-        <button class="btn ghost small" id="panel-close" aria-label="Close panel">✕</button>
+        <button class="icon-btn small ghost" id="panel-close" data-icon="x" data-tip="Close"></button>
       </div>
       <div class="side-controls">
         <label class="switch"><input type="checkbox" id="focus-toggle"> <span>Focus mode</span></label>
@@ -41,7 +41,7 @@
           </span>
         </label>
         <label class="switch"><input type="checkbox" id="zoom-toggle"> <span>Zoom-reveal</span></label>
-        <label class="switch" title="Small images fade away when you zoom out, and come back when you zoom in"><input type="checkbox" id="small-toggle"> <span>Fade small images</span></label>
+        <label class="switch" data-tip="Small images fade away when you zoom out, and come back when you zoom in"><input type="checkbox" id="small-toggle"> <span>Fade small images</span></label>
         <p class="hint small">Click an image to go to it. With focus mode on, the others fade so it stands out. Double-clicking an image on the map also focuses it.</p>
       </div>
       <div id="viewer-outliner"></div>
@@ -49,7 +49,7 @@
   </div>
   <div id="tooltip" class="tooltip" hidden></div>
   <div id="popup" class="popup" hidden>
-    <button class="close" aria-label="Close">&times;</button>
+    <button class="close icon-btn small ghost" data-icon="x" data-tip="Close"></button>
     <h3></h3>
     <img class="note-image" alt="" hidden>
     <div class="note-body"></div>

@@ -3,6 +3,10 @@ import * as T from './tree.js';
 import { FadeController } from './fade.js';
 import { renderOutliner } from './outliner.js';
 import { renderMarkdown } from './markdown.js';
+import { hydrateIcons, initTooltips } from './icons.js';
+
+hydrateIcons();
+initTooltips();
 
 const $ = (sel) => document.querySelector(sel);
 const params = new URLSearchParams(location.search);
@@ -57,7 +61,23 @@ const popup = $('#popup');
 
 async function loadMapList() {
   const maps = await api('/api/maps');
-  mapSelect.replaceChildren(...maps.map((m) => new Option(m.name, m.id)));
+  // Folder names become indented, unselectable headings in the menu.
+  const opts = [];
+  let prev = [];
+  const pad = (depth) => '   '.repeat(depth);
+  for (const m of maps) {
+    const path = m.path || [];
+    let same = 0;
+    while (same < prev.length && same < path.length && prev[same] === path[same]) same++;
+    for (let i = same; i < path.length; i++) {
+      const heading = new Option(`${pad(i)}📁 ${path[i]}`, '');
+      heading.disabled = true;
+      opts.push(heading);
+    }
+    opts.push(new Option(`${pad(path.length)}${m.name}`, m.id));
+    prev = path;
+  }
+  mapSelect.replaceChildren(...opts);
   mapSelect.hidden = maps.length < 2;
   return maps;
 }

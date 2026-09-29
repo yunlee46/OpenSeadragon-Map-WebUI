@@ -1,5 +1,9 @@
 import { api } from '/js/overlay.js';
-import { $, h, adminApi, uploadFiles } from './common.js';
+import { $, h, iconBtn, newId, adminApi, uploadFiles } from './common.js';
+import * as T from '/js/tree.js';
+import { renderOutliner } from '/js/outliner.js';
+import { showMenu } from '/js/contextmenu.js';
+import { icon, hydrateIcons, initTooltips } from '/js/icons.js';
 import { editor, openEditor } from './editor.js';
 import { showPlanner, stopPlanner } from './planner.js';
 
@@ -77,43 +81,185 @@ function route() {
 // Maps list
 // ======================================================================
 
+// The maps list is a tree of folders (kind 'group') and maps (kind 'map'), saved as soon as it changes.
+const mapsView = { tree: [], selectedId: null };
+
 async function showMaps() {
   $('#maps-view').hidden = false;
-  const maps = await adminApi('/api/admin/maps');
-  const tbody = $('#maps-list');
-  tbody.replaceChildren();
-  if (!maps.length) tbody.append(h('tr', {}, h('td', { colSpan: 3, class: 'muted' }, 'No maps yet. Create one above.')));
-  for (const m of maps) {
-    tbody.append(h('tr', {},
-      h('td', {}, h('a', { href: `#/edit/${m.id}` }, m.name), m.is_default ? h('span', { class: 'badge' }, 'default') : null,
-        !m.published_at ? h('span', { class: 'badge warn' }, 'not published') : m.unpublished ? h('span', { class: 'badge warn' }, 'unpublished changes') : null),
-      h('td', { class: 'muted' }, `${m.layer_count} image${m.layer_count === 1 ? '' : 's'}, ${m.shape_count} shape${m.shape_count === 1 ? '' : 's'}`),
-      h('td', { class: 'actions' },
-        h('a', { class: 'btn small', href: `#/edit/${m.id}` }, 'Edit'),
-        m.unpublished ? h('button', { class: 'btn small primary-outline', onclick: () => publishMap(m) }, 'Publish') : null,
-        h('a', { class: 'btn small ghost', href: m.published_at ? `/?map=${m.id}` : `/?map=${m.id}&preview=1`, target: '_blank' }, m.published_at ? 'View' : 'Preview'),
-        m.is_default ? null : h('button', { class: 'btn small ghost', onclick: () => setDefault(m) }, 'Make default'),
-        h('button', { class: 'btn small ghost', onclick: () => renameMap(m) }, 'Rename'),
-        h('button', { class: 'btn small danger', onclick: () => deleteMap(m) }, 'Delete'),
-      ),
-    ));
+  mapsView.tree = await adminApi('/api/admin/map-tree');
+  renderMaps();
+}
+
+const viewerLink = (m) => (m.published_at ? `/?map=${m.id}` : `/?map=${m.id}&preview=1`);
+
+function mapExtras(n) {
+  if (n.kind === 'group') {
+    return [h('span', { class: 'row-actions' },
+      iconBtn('mapPlus', 'New map in this folder', { onclick: () => newMapIn(n) }, 'small ghost'),
+      iconBtn('folderPlus', 'New folder inside', { onclick: () => newFolder(n) }, 'small ghost'),
+      iconBtn('rename', 'Rename folder', { onclick: () => renameFolder(n) }, 'small ghost'),
+      iconBtn('trash', 'Delete folder (its maps move up a level)', { onclick: () => deleteFolder(n, false) }, 'small danger'),
+    )];
   }
+  const status = !n.published_at ? h('span', { class: 'ol-badge warn' }, 'not published')
+    : n.unpublished ? h('span', { class: 'ol-badge warn' }, 'unpublished changes') : null;
+  return [
+    status,
+    h('span', { class: 'ol-badge muted-badge' }, `${n.layer_count} img · ${n.shape_count} shapes`),
+    h('span', { class: 'row-actions' },
+      iconBtn('edit', 'Edit map', { href: `#/edit/${n.id}` }, 'small'),
+      n.unpublished
+        ? iconBtn('publish', 'Publish: make the saved draft visible to visitors', { onclick: () => publishMap(n) }, 'small primary-outline')
+        : h('span', { class: 'icon-slot' }), // keeps the action columns lined up
+      iconBtn('eye', n.published_at ? 'View the published map' : 'Preview (not published yet)', { href: viewerLink(n), target: '_blank' }, 'small ghost'),
+      iconBtn('star', n.is_default ? 'Default map (opens first)' : 'Make this the default map', { onclick: () => setDefault(n), class: n.is_default ? 'on' : '' }, 'small ghost'),
+      iconBtn('rename', 'Rename map', { onclick: () => renameMap(n) }, 'small ghost'),
+      iconBtn('trash', 'Delete map', { onclick: () => deleteMap(n) }, 'small danger'),
+    ),
+  ].filter(Boolean);
+}
+
+function renderMaps() {
+  renderOutliner($('#maps-tree'), mapsView.tree, {
+    showEye: false,
+    selectedId: mapsView.selectedId,
+    emptyText: 'No maps yet. Create one above.',
+    leafIcon: () => icon('map'),
+    extras: mapExtras,
+    isCollapsed: (n) => n.collapsed,
+    onToggleCollapse: (n) => { n.collapsed = !n.collapsed; renderMaps(); saveMapTree(); },
+    onSelect: (n) => { mapsView.selectedId = mapsView.selectedId === n.id ? null : n.id; renderMaps(); },
+    onDblClick: (n) => { if (n.kind === 'map') location.hash = `#/edit/${n.id}`; else renameFolder(n); },
+    onContext: (n, e) => mapMenu(n, e.clientX, e.clientY),
+    canDrop: (dragId, targetId) => {
+      const d = T.find(mapsView.tree, dragId)?.node;
+      return !!d && (!targetId || !T.contains(d, targetId));
+    },
+    onDrop: (dragId, targetId, where) => {
+      const d = T.find(mapsView.tree, dragId)?.node;
+      if (!d || (targetId && T.contains(d, targetId))) return;
+      T.remove(mapsView.tree, dragId);
+      T.insert(mapsView.tree, d, targetId, where);
+      if (where === 'inside') { const t = T.find(mapsView.tree, targetId)?.node; if (t) t.collapsed = false; }
+      renderMaps();
+      saveMapTree();
+    },
+  });
+}
+
+const serializeMapTree = (list) => list.map((n) => (n.kind === 'group'
+  ? { kind: 'group', id: n.id, name: n.name, collapsed: n.collapsed, children: serializeMapTree(n.children) }
+  : { kind: 'map', id: n.id }));
+
+// Saves go out one at a time, in order. The page's own tree stays the source of truth
+// (new folder ids are made here and kept by the server), so a slow reply can't undo a newer change.
+let mapTreeSaving = Promise.resolve();
+function saveMapTree() {
+  const tree = serializeMapTree(mapsView.tree);
+  renderMaps();
+  mapTreeSaving = mapTreeSaving
+    .then(() => adminApi('/api/admin/map-tree', { method: 'PUT', body: { tree } }))
+    .catch((err) => {
+      alert(`Could not save the maps list: ${err.message}`);
+      showMaps();
+    });
+  return mapTreeSaving;
+}
+
+function mapMenu(n, x, y) {
+  if (n.kind === 'group') {
+    const count = countMaps(n);
+    showMenu(x, y, [
+      { label: 'New map here…', onClick: () => newMapIn(n) },
+      { label: 'New folder inside…', onClick: () => newFolder(n) },
+      { label: 'Rename…', onClick: () => renameFolder(n) },
+      { separator: true },
+      { label: 'Delete folder (keep its maps)', onClick: () => deleteFolder(n, false) },
+      { label: `Delete folder and its ${count} map${count === 1 ? '' : 's'}…`, danger: true, disabled: !count, onClick: () => deleteFolder(n, true) },
+    ]);
+    return;
+  }
+  showMenu(x, y, [
+    { label: 'Edit', onClick: () => { location.hash = `#/edit/${n.id}`; } },
+    { label: n.published_at ? 'View' : 'Preview', onClick: () => window.open(viewerLink(n), '_blank') },
+    n.unpublished ? { label: 'Publish', onClick: () => publishMap(n) } : null,
+    { label: 'Make default', checked: n.is_default, disabled: n.is_default, onClick: () => setDefault(n) },
+    { label: 'Rename…', onClick: () => renameMap(n) },
+    { separator: true },
+    { label: 'Delete…', danger: true, onClick: () => deleteMap(n) },
+  ].filter(Boolean));
+}
+
+function countMaps(folder) {
+  let c = 0;
+  T.walk(folder.children, (x) => { if (x.kind === 'map') c++; });
+  return c;
+}
+
+// New things go into the selected folder (or the folder of the selected map).
+function targetFolder() {
+  const r = mapsView.selectedId && T.find(mapsView.tree, mapsView.selectedId);
+  if (!r) return null;
+  return r.node.kind === 'group' ? r.node : r.parent;
 }
 
 $('#new-map-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = e.target.name.value.trim();
   if (!name) return;
-  const { id } = await adminApi('/api/admin/maps', { method: 'POST', body: { name } });
+  const { id } = await adminApi('/api/admin/maps', { method: 'POST', body: { name, folder_id: targetFolder()?.id || null } });
   e.target.reset();
   location.hash = `#/edit/${id}`;
 });
+
+$('#new-folder').addEventListener('click', () => newFolder(targetFolder()));
+
+async function newMapIn(folder) {
+  const name = prompt(`Name of the new map in "${folder.name}":`);
+  if (!name?.trim()) return;
+  const { id } = await adminApi('/api/admin/maps', { method: 'POST', body: { name, folder_id: folder.id } });
+  location.hash = `#/edit/${id}`;
+}
+
+function newFolder(parent) {
+  const name = prompt(parent ? `Name of the new folder inside "${parent.name}":` : 'Name of the new folder:');
+  if (!name?.trim()) return;
+  const folder = { kind: 'group', id: newId(), name: name.trim(), collapsed: false, children: [] };
+  if (parent) { parent.children.unshift(folder); parent.collapsed = false; } else mapsView.tree.unshift(folder);
+  mapsView.selectedId = folder.id;
+  saveMapTree();
+}
+
+function renameFolder(folder) {
+  const name = prompt('Folder name:', folder.name);
+  if (!name?.trim()) return;
+  folder.name = name.trim();
+  saveMapTree();
+}
+
+async function deleteFolder(folder, withMaps) {
+  const r = T.find(mapsView.tree, folder.id);
+  if (!r) return;
+  const maps = [];
+  T.walk(folder.children, (x) => { if (x.kind === 'map') maps.push(x); });
+  if (withMaps) {
+    if (!confirm(`Delete the folder "${folder.name}" and ALL ${maps.length} map(s) inside it?\n\n${maps.map((m) => `• ${m.name}`).join('\n')}\n\nTheir images stay in the library. This cannot be undone.`)) return;
+    for (const m of maps) await adminApi(`/api/admin/maps/${m.id}`, { method: 'DELETE' });
+    r.list.splice(r.index, 1);
+  } else {
+    if (maps.length && !confirm(`Delete the folder "${folder.name}"? Its ${maps.length} map(s) and subfolders move up a level.`)) return;
+    r.list.splice(r.index, 1, ...folder.children);
+  }
+  if (mapsView.selectedId === folder.id) mapsView.selectedId = null;
+  saveMapTree();
+}
 
 async function publishMap(m) {
   await adminApi(`/api/admin/maps/${m.id}/publish`, { method: 'POST' });
   showMaps();
 }
 async function setDefault(m) {
+  if (m.is_default) return;
   await adminApi(`/api/admin/maps/${m.id}`, { method: 'PATCH', body: { is_default: true } });
   showMaps();
 }
@@ -200,14 +346,12 @@ function imageCard(img, types) {
     img.planner_item ? h('div', { class: 'small planned-note' }, h('a', { href: '#/planner' }, `From the planner: ${img.planner_item.title}`)) : null,
     h('label', { class: 'row small' }, 'Type', typeSelect),
     h('div', { class: 'actions' },
-      h('button', { class: 'btn small ghost', onclick: () => renameImage(img) }, 'Rename'),
-      h('button', {
-        class: 'btn small ghost',
+      iconBtn('rename', 'Rename image', { onclick: () => renameImage(img) }, 'small ghost'),
+      iconBtn('upload', 'Replace file: upload a new version. Every map keeps its placement, type and hitboxes.', {
         disabled: img.status === 'processing' || replacing,
-        title: 'Upload a new file for this image. Every map keeps its placement, type and hitboxes.',
         onclick: () => replaceImage(img),
-      }, 'Replace file'),
-      h('button', { class: 'btn small danger', onclick: () => deleteImage(img) }, 'Delete'),
+      }, 'small ghost'),
+      iconBtn('trash', 'Delete image and its tiles', { onclick: () => deleteImage(img) }, 'small danger'),
     ),
   );
 }
@@ -295,8 +439,7 @@ async function showSettings() {
       h('td', {}, h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: t.fade_zoom, onchange: (e) => patch({ fade_zoom: e.target.checked }) }))),
       h('td', {}, h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: t.fade_small, onchange: (e) => patch({ fade_small: e.target.checked }) }))),
       h('td', { class: 'muted' }, String(t.image_count)),
-      h('td', { class: 'actions' }, h('button', {
-        class: 'btn small danger',
+      h('td', { class: 'actions' }, iconBtn('trash', `Delete the type "${t.name}"`, {
         onclick: async () => {
           const msg = t.image_count
             ? `Delete the type "${t.name}"? ${t.image_count} image(s) using it will have no type. The images themselves are kept.`
@@ -305,7 +448,7 @@ async function showSettings() {
           await adminApi(`/api/admin/types/${t.id}`, { method: 'DELETE' });
           showSettings();
         },
-      }, 'Delete')),
+      }, 'small danger')),
     ));
   }
 
@@ -395,4 +538,6 @@ function waitForRestart() {
   setTimeout(tick, 1000);
 }
 
+hydrateIcons();
+initTooltips();
 start();

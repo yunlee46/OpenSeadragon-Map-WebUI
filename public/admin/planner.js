@@ -1,7 +1,8 @@
 // Planner page: a to-do list of images still to be made.
 
 import * as T from '/js/tree.js';
-import { $, h, adminApi, uploadFiles } from './common.js';
+import { $, h, iconBtn, adminApi, uploadFiles } from './common.js';
+import { icon } from '/js/icons.js';
 
 const STATUS = { idea: 'Idea', progress: 'In progress', done: 'Done' };
 const PRIORITY = { 2: 'High', 1: 'Normal', 0: 'Low' };
@@ -96,14 +97,14 @@ function itemCard(item) {
         h('div', { class: 'name' }, img.name),
         img.status === 'ready' ? h('div', { class: 'muted small' }, `${img.width} × ${img.height} px`) : null,
         img.status === 'error' ? h('div', { class: 'error small' }, img.error) : null,
-        h('button', { class: 'btn small ghost', onclick: () => patch(item, { image_id: null }) }, 'Unlink')))
+        iconBtn('unlink', 'Unlink this image from the item (the image stays in the library)', { onclick: () => patch(item, { image_id: null }) }, 'small ghost')))
     : h('div', { class: 'plan-actions' },
-      h('button', { class: 'btn small primary', title: 'Upload the finished image', onclick: () => pickImage(item) }, '⤒ Add image'),
-      h('button', { class: 'btn small ghost', onclick: () => openLinkDialog(item) }, 'Link existing'));
+      iconBtn('upload', 'Upload the finished image', { onclick: () => pickImage(item) }, 'primary'),
+      iconBtn('link', 'Link an image that is already in the library', { onclick: () => openLinkDialog(item) }, 'ghost'));
 
   const card = h('div', { class: `card plan-item status-${item.status} prio-${item.priority}`, 'data-id': item.id },
     h('div', { class: 'plan-main' },
-      h('button', { class: 'plan-expand', title: open ? 'Hide details' : 'Show details', onclick: () => {
+      h('button', { class: 'plan-expand', 'data-tip': open ? 'Hide details' : 'Show details', onclick: () => {
         if (open) plan.expanded.delete(item.id); else plan.expanded.add(item.id);
         render();
       } }, open ? '▾' : '▸'),
@@ -111,11 +112,11 @@ function itemCard(item) {
         class: 'plan-title', value: item.title, maxLength: 200,
         onchange: (e) => { if (e.target.value.trim()) patch(item, { title: e.target.value }); else e.target.value = item.title; },
       }),
-      h('select', { class: 'pill', title: 'Status', onchange: (e) => patch(item, { status: e.target.value }) },
+      h('select', { class: 'pill', 'data-tip': 'Status', onchange: (e) => patch(item, { status: e.target.value }) },
         ...Object.entries(STATUS).map(([v, l]) => h('option', { value: v, selected: item.status === v }, l))),
-      h('select', { class: 'pill prio', title: 'Priority', onchange: (e) => patch(item, { priority: +e.target.value }) },
+      h('select', { class: 'pill prio', 'data-tip': 'Priority', onchange: (e) => patch(item, { priority: +e.target.value }) },
         ...Object.entries(PRIORITY).map(([v, l]) => h('option', { value: v, selected: item.priority === +v }, l))),
-      h('select', { class: 'pill', title: 'Type the image will get', onchange: (e) => patch(item, { type_id: e.target.value || null }) },
+      h('select', { class: 'pill', 'data-tip': 'Type the image will get', onchange: (e) => patch(item, { type_id: e.target.value || null }) },
         h('option', { value: '', selected: !item.type_id }, 'No type'),
         ...plan.types.map((t) => h('option', { value: t.id, selected: item.type_id === t.id }, t.name))),
       imageArea,
@@ -147,7 +148,7 @@ function details(item) {
     h('div', { class: 'plan-for' },
       h('label', {}, 'Planned for map', h('select', { onchange: (e) => patch(item, { map_id: e.target.value || null, group_id: null }) },
         h('option', { value: '' }, 'No particular map'),
-        ...plan.maps.map((m) => h('option', { value: m.id, selected: m.id === item.map_id }, m.name)))),
+        ...plan.maps.map((m) => h('option', { value: m.id, selected: m.id === item.map_id }, [...(m.path || []), m.name].join(' › '))))),
       h('label', {}, 'Group on that map', groupSelect),
     ),
     h('div', {},
@@ -155,11 +156,11 @@ function details(item) {
       h('div', { class: 'plan-refs' },
         ...item.refs.map((r) => h('div', { class: 'ref' },
           h('img', { src: r.thumb_url, alt: r.name, title: `${r.name} (click to enlarge)`, onclick: () => openRef(r) }),
-          h('button', { class: 'ref-del', title: 'Remove', onclick: () => deleteRef(item, r) }, '✕'))),
-        h('button', { class: 'ref add', title: 'Add reference images', onclick: () => pickRefs(item) }, '+')),
+          h('button', { class: 'ref-del', 'data-tip': 'Remove this reference', 'aria-label': 'Remove this reference', html: icon('x'), onclick: () => deleteRef(item, r) }))),
+        h('button', { class: 'ref add', 'data-tip': 'Add reference images', 'aria-label': 'Add reference images', html: icon('plus'), onclick: () => pickRefs(item) })),
     ),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn small danger', onclick: () => deleteItem(item) }, 'Delete item'),
+      iconBtn('trash', 'Delete this planner item', { onclick: () => deleteItem(item) }, 'small danger'),
       item.image ? h('span', { class: 'muted small' }, 'Deleting the item keeps its image in the library.') : null),
   );
 }

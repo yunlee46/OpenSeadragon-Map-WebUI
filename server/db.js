@@ -156,6 +156,24 @@ const migrations = [
     db.prepare(`UPDATE types SET fade_small = 0 WHERE name = 'background'`).run();
     db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('small_fade_percent', '1')`).run();
   },
+  // 4: folders for organising the maps list
+  () => {
+    db.exec(`
+      CREATE TABLE map_folders (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        parent_id  TEXT,
+        pos        INTEGER NOT NULL DEFAULT 0,
+        collapsed  INTEGER NOT NULL DEFAULT 0
+      );
+      ALTER TABLE maps ADD COLUMN folder_id TEXT;
+      ALTER TABLE maps ADD COLUMN pos INTEGER NOT NULL DEFAULT 0;
+    `);
+    // Keep the old alphabetical order as the starting order.
+    const maps = db.prepare('SELECT id FROM maps ORDER BY name COLLATE NOCASE').all();
+    const setPos = db.prepare('UPDATE maps SET pos = ? WHERE id = ?');
+    maps.forEach((m, i) => setPos.run(i, m.id));
+  },
 ];
 
 const version = db.pragma('user_version', { simple: true });

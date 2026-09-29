@@ -76,6 +76,9 @@ function nodeEl(n, depth, opts) {
   icon.className = 'ol-icon';
   if (isGroup) {
     icon.innerHTML = ICONS.folder;
+  } else if (opts.leafIcon) {
+    icon.innerHTML = opts.leafIcon(n);
+    icon.classList.add('svg');
   } else {
     const img = document.createElement('img');
     img.src = n.thumb_url;
@@ -99,6 +102,7 @@ function nodeEl(n, depth, opts) {
     row.append(count);
   } else {
     const type = opts.typeName?.(n);
+    // (maps and other leaves pass their own badges through opts.extras)
     if (type) {
       const badge = document.createElement('span');
       badge.className = 'ol-badge type';
@@ -107,14 +111,26 @@ function nodeEl(n, depth, opts) {
     }
   }
 
-  if (!opts.readOnly) {
+  // Extra per-row content (badges, action buttons); clicks on it don't select or drag the row.
+  const extras = opts.extras?.(n) || [];
+  for (const el of extras) {
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    el.addEventListener('click', (e) => e.stopPropagation());
+    el.draggable = false;
+    el.classList.add('ol-extra');
+    row.append(el);
+  }
+
+  if (!opts.readOnly && (opts.showEye ?? true)) {
     const eye = document.createElement('button');
     eye.className = 'ol-eye';
-    eye.title = n.hidden ? 'Hidden (click to show)' : 'Visible (click to hide)';
+    eye.dataset.tip = n.hidden ? 'Hidden (click to show)' : 'Visible (click to hide)';
     eye.innerHTML = n.hidden ? ICONS.eyeOff : ICONS.eye;
     eye.addEventListener('click', (e) => { e.stopPropagation(); opts.onToggleHidden(n); });
     row.append(eye);
+  }
 
+  if (!opts.readOnly) {
     row.draggable = true;
     row.addEventListener('dragstart', (e) => {
       dragId = n.id;
@@ -142,7 +158,7 @@ function nodeEl(n, depth, opts) {
 
   row.addEventListener('click', (e) => opts.onSelect?.(n, e));
   row.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.ol-eye, .ol-caret')) return;
+    if (e.target.closest('.ol-eye, .ol-caret, .ol-extra')) return;
     opts.onDblClick?.(n, e);
   });
   row.addEventListener('contextmenu', (e) => {
@@ -175,6 +191,6 @@ function clearDrop() {
 
 function countLayers(g) {
   let n = 0;
-  for (const c of g.children) n += c.kind === 'layer' ? 1 : countLayers(c);
+  for (const c of g.children) n += c.kind === 'group' ? countLayers(c) : 1;
   return n;
 }
