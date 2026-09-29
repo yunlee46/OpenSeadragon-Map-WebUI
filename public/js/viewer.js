@@ -10,6 +10,11 @@ const PREVIEW = params.get('preview') === '1';
 
 const viewer = OpenSeadragon({
   id: 'viewer',
+  // The WebGL drawer (default since OpenSeadragon 5) mishandles semi-transparent pixels in PNG tiles,
+  // making soft edges and shadows glow. The canvas drawer blends them correctly.
+  drawer: 'canvas',
+  // Snap tiles to whole pixels so semi-transparent tiles don't show faint seams where they meet.
+  subPixelRoundingForTransparency: OpenSeadragon.SUBPIXEL_ROUNDING_OCCURRENCES.ALWAYS,
   prefixUrl: '/vendor/osd/images/',
   showNavigator: true,
   navigatorPosition: 'BOTTOM_RIGHT',
